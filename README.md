@@ -76,12 +76,10 @@
 
 ### 🪄 One-Liner Magic (Recommended)
 
-Clone, compile, and register the systemd background daemon in one step:
+Install `terebi` in seconds with automated binary extraction and systemd service setup:
 
 ```bash
-git clone https://github.com/Praveensenpai/terebi.git ~/terebi
-cd ~/terebi
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/Praveensenpai/terebi/main/install.sh | bash
 ```
 
 <br>
