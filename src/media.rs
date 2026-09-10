@@ -11,9 +11,19 @@ pub const KNOWN_APPS: &[AppInfo] = &[
         icon: "📺",
     },
     AppInfo {
+        name: "YouTube (Cobalt)",
+        package: "io.gh.reisxd.tizentube.cobalt",
+        icon: "📺",
+    },
+    AppInfo {
         name: "SmartTube",
         package: "com.teamsmart.videomanager.tv",
         icon: "📺",
+    },
+    AppInfo {
+        name: "FLauncher",
+        package: "me.efesser.flauncher",
+        icon: "🏠",
     },
     AppInfo {
         name: "Netflix",
@@ -98,6 +108,9 @@ pub fn resolve_package(input: &str) -> Option<String> {
     if lower == "yt" || lower == "youtube" {
         return Some("com.google.android.youtube.tv".to_string());
     }
+    if lower == "cobalt" || lower == "tizentube" {
+        return Some("io.gh.reisxd.tizentube.cobalt".to_string());
+    }
     if lower == "smarttube" {
         return Some("com.teamsmart.videomanager.tv".to_string());
     }
@@ -168,8 +181,8 @@ pub fn parse_media_session(media_dump: &str) -> MediaMetadata {
     let mut meta = MediaMetadata::default();
     for line in media_dump.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("description=") {
-            let desc = trimmed.trim_start_matches("description=").trim();
+        if let Some(pos) = trimmed.find("description=") {
+            let desc = trimmed[pos + "description=".len()..].trim();
             let parts: Vec<&str> = desc.split(',').map(str::trim).collect();
             if let Some(t) = parts.first() {
                 if !t.is_empty() && *t != "null" {

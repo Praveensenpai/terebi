@@ -26,11 +26,17 @@ impl TvController {
     }
 
     pub fn get_status(&self) -> Result<TvStatus> {
-        let win_dump = self.adb.shell(&["dumpsys", "window", "windows"])?;
-        let pkg = media::parse_focused_package(&win_dump)
-            .unwrap_or_else(|| "com.google.android.tvlauncher".to_string());
+        let win_dump = self.adb.shell(&["dumpsys", "window"])?;
+        let mut pkg = media::parse_focused_package(&win_dump);
 
-        let (app_name, app_icon) = get_app_display(&pkg);
+        if pkg.is_none() {
+            if let Ok(act_dump) = self.adb.shell(&["dumpsys", "activity", "activities"]) {
+                pkg = media::parse_focused_package(&act_dump);
+            }
+        }
+
+        let package = pkg.unwrap_or_else(|| "com.google.android.tvlauncher".to_string());
+        let (app_name, app_icon) = get_app_display(&package);
 
         let media_dump = self.adb.shell(&["dumpsys", "media_session"])?;
         let media = media::parse_media_session(&media_dump);
@@ -40,7 +46,7 @@ impl TvController {
             || pwr_dump.contains("Display Power: state=ON");
 
         Ok(TvStatus {
-            package: pkg,
+            package,
             app_name: app_name.to_string(),
             app_icon: app_icon.to_string(),
             media,

@@ -172,6 +172,24 @@ fn send_screenshot(client: &Client, config: &TerebiConfig, tv: &TvController, ch
         return;
     };
 
+    let is_blank_overlay = bytes.len() < 25_000;
+    let caption = if is_blank_overlay {
+        if let Ok(status) = tv.get_status() {
+            let title = status.media.title.as_deref().unwrap_or(&status.app_name);
+            format!(
+                "📺 {} • Live Screenshot\n🎬 <b>Now Playing:</b> {title}\nℹ️ <i>Video frame is protected by hardware overlay/DRM during active playback.</i>",
+                config.friendly_name
+            )
+        } else {
+            format!(
+                "📺 {} • Live Screenshot\nℹ️ <i>Video frame is protected by hardware overlay/DRM during active playback.</i>",
+                config.friendly_name
+            )
+        }
+    } else {
+        format!("📺 {} • Live Screenshot", config.friendly_name)
+    };
+
     let url = format!("https://api.telegram.org/bot{}/sendPhoto", config.bot_token);
     let part = Part::bytes(bytes)
         .file_name("screen.png")
@@ -179,10 +197,8 @@ fn send_screenshot(client: &Client, config: &TerebiConfig, tv: &TvController, ch
         .unwrap_or_else(|_| Part::bytes(vec![]));
     let form = multipart::Form::new()
         .text("chat_id", chat_id.to_string())
-        .text(
-            "caption",
-            format!("📺 {} • Live Screenshot", config.friendly_name),
-        )
+        .text("caption", caption)
+        .text("parse_mode", "HTML")
         .part("photo", part);
 
     let _ = client.post(&url).multipart(form).send();
