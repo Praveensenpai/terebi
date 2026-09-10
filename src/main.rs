@@ -5,6 +5,7 @@ use colored::Colorize;
 mod adb;
 mod bot;
 mod config;
+mod discovery;
 mod media;
 mod tv;
 

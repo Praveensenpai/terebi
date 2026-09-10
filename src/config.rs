@@ -9,6 +9,10 @@ fn default_port() -> u16 {
     5555
 }
 
+fn default_ip() -> String {
+    "auto".to_string()
+}
+
 fn default_name() -> String {
     "Smart TV".to_string()
 }
@@ -17,6 +21,7 @@ fn default_name() -> String {
 pub struct TerebiConfig {
     pub bot_token: String,
     pub chat_id: String,
+    #[serde(default = "default_ip")]
     pub tv_ip: String,
     #[serde(default = "default_port")]
     pub tv_port: u16,
@@ -74,11 +79,15 @@ impl TerebiConfig {
         io::stdin().read_line(&mut chat)?;
         let chat_id = chat.trim().to_string();
 
-        print!("  Enter TV IP Address (e.g. 192.168.1.50): ");
+        print!("  Enter TV IP Address [auto]: ");
         io::stdout().flush()?;
         let mut ip = String::new();
         io::stdin().read_line(&mut ip)?;
-        let tv_ip = ip.trim().to_string();
+        let tv_ip = if ip.trim().is_empty() {
+            "auto".to_string()
+        } else {
+            ip.trim().to_string()
+        };
 
         print!("  Enter TV Name [Living Room TV]: ");
         io::stdout().flush()?;
@@ -90,8 +99,8 @@ impl TerebiConfig {
             name.trim().to_string()
         };
 
-        if bot_token.is_empty() || chat_id.is_empty() || tv_ip.is_empty() {
-            anyhow::bail!("Bot token, chat ID, and TV IP cannot be empty.");
+        if bot_token.is_empty() || chat_id.is_empty() {
+            anyhow::bail!("Bot token and chat ID cannot be empty.");
         }
 
         let config = Self {

@@ -1,26 +1,76 @@
 use anyhow::{Context, Result};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use crate::discovery;
 
 #[derive(Debug, Clone)]
 pub struct AdbDevice {
     pub ip: String,
     pub port: u16,
+    resolved_ip: Arc<Mutex<Option<String>>>,
 }
 
 impl AdbDevice {
     #[must_use]
     pub fn new(ip: String, port: u16) -> Self {
-        Self { ip, port }
+        Self {
+            ip,
+            port,
+            resolved_ip: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn resolve_target(&self) -> Result<String> {
+        if self.ip != "auto" && !self.ip.is_empty() {
+            return Ok(format!("{}:{}", self.ip, self.port));
+        }
+
+        let mut lock = self
+            .resolved_ip
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Lock poisoned: {e}"))?;
+
+        if let Some(ref cached_ip) = *lock {
+            let candidate = format!("{cached_ip}:{}", self.port);
+            if Self::is_target_connected(&candidate) {
+                return Ok(candidate);
+            }
+        }
+
+        if let Some(discovered) = discovery::discover_tv_ip(self.port) {
+            let target = format!("{discovered}:{}", self.port);
+            *lock = Some(discovered);
+            return Ok(target);
+        }
+
+        anyhow::bail!(
+            "Failed to auto-discover TV on local network. Ensure ADB network debugging is enabled."
+        );
     }
 
     #[must_use]
     pub fn target(&self) -> String {
-        format!("{}:{}", self.ip, self.port)
+        self.resolve_target()
+            .unwrap_or_else(|_| format!("{}:{}", self.ip, self.port))
+    }
+
+    fn is_target_connected(target: &str) -> bool {
+        let Ok(output) = Command::new("adb").args(["devices"]).output() else {
+            return false;
+        };
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines() {
+            if line.starts_with(target) && line.contains("device") {
+                return true;
+            }
+        }
+        false
     }
 
     pub fn connect(&self) -> Result<bool> {
-        let target = self.target();
+        let target = self.resolve_target()?;
         let output = Command::new("adb")
             .args(["connect", &target])
             .output()
@@ -32,24 +82,18 @@ impl AdbDevice {
 
     #[must_use]
     pub fn is_connected(&self) -> bool {
-        let target = self.target();
-        let Ok(output) = Command::new("adb").args(["devices"]).output() else {
+        let Ok(target) = self.resolve_target() else {
             return false;
         };
-        let text = String::from_utf8_lossy(&output.stdout);
-        for line in text.lines() {
-            if line.starts_with(&target) && line.contains("device") {
-                return true;
-            }
-        }
-        false
+        Self::is_target_connected(&target)
     }
 
     pub fn ensure_connected(&self) -> Result<()> {
         if !self.is_connected() {
             let connected = self.connect()?;
             if !connected {
-                anyhow::bail!("Could not connect to TV at {}", self.target());
+                let target = self.resolve_target()?;
+                anyhow::bail!("Could not connect to TV at {target}");
             }
             std::thread::sleep(Duration::from_millis(300));
         }
