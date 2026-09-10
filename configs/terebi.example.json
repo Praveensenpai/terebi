@@ -1,0 +1,7 @@
+{
+  "bot_token": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz",
+  "chat_id": "123456789",
+  "tv_ip": "192.168.1.50",
+  "tv_port": 5555,
+  "friendly_name": "Living Room TV"
+}
