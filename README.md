@@ -15,7 +15,7 @@
 
 <br>
 
-[⚡ Quick Start](#-quick-start) • [✨ Key Features](#-key-features) • [🔄 Architecture](#-architecture--workflow) • [📱 Telegram Commands](#-telegram-commands) • [🖥️ CLI Usage](#%EF%B8%8F-cli-usage) • [⚙️ Configuration](#%EF%B8%8F-configuration)
+[⚡ Quick Start](#-quick-start) • [✨ Key Features](#-key-features) • [🔄 Architecture](#-architecture--workflow) • [📱 Telegram Commands](#-telegram-commands) • [🖥️ CLI Usage](#%EF%B8%8F-cli-usage) • [⚙️ Service Management](#%EF%B8%8F-service-management-systemd) • [🔧 Configuration](#-configuration)
 
 </div>
 
@@ -87,10 +87,35 @@ curl -fsSL https://raw.githubusercontent.com/Praveensenpai/terebi/main/install.s
 ### 🛠️ Manual Build from Source
 
 ```bash
+# 1. Clone & compile release binary
 git clone https://github.com/Praveensenpai/terebi.git
 cd terebi
 cargo build --release
 install -Dm 755 target/release/terebi ~/.local/bin/terebi
+
+# 2. Run interactive setup wizard
+terebi setup
+
+# 3. Create systemd user service unit
+mkdir -p ~/.config/systemd/user
+cat << 'EOF' > ~/.config/systemd/user/terebi.service
+[Unit]
+Description=Terebi (テレビ) Smart TV Telegram Controller & Watchdog
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/terebi daemon
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=default.target
+EOF
+
+# 4. Enable and start daemon on boot
+systemctl --user daemon-reload
+systemctl --user enable --now terebi.service
 ```
 
 ---
@@ -143,7 +168,23 @@ terebi connect
 
 ---
 
-## ⚙️ Configuration
+## ⚙️ Service Management (systemd)
+
+`terebi` runs as an unprivileged user daemon managed by `systemd`. Useful operations:
+
+| Action | Command |
+|---|---|
+| **Check service status** | `systemctl --user status terebi.service` |
+| **Start service** | `systemctl --user start terebi.service` |
+| **Stop service** | `systemctl --user stop terebi.service` |
+| **Restart service** | `systemctl --user restart terebi.service` |
+| **Enable on boot** | `systemctl --user enable terebi.service` |
+| **Disable from boot** | `systemctl --user disable terebi.service` |
+| **Stream live watchdog logs** | `journalctl --user -u terebi.service -f` |
+
+---
+
+## 🔧 Configuration
 
 Settings are stored at `~/.config/terebi/config.json`:
 
