@@ -70,6 +70,25 @@ impl TvController {
         Ok((pkg, app_label))
     }
 
+    pub fn clear_app_data(&self, query: &str) -> Result<(String, String)> {
+        let pkg = media::resolve_package(query).unwrap_or_else(|| query.to_string());
+
+        let (name, _) = get_app_display(&pkg);
+        let app_label = if name == "App" {
+            pkg.clone()
+        } else {
+            name.to_string()
+        };
+
+        let out = self.adb.shell(&["pm", "clear", &pkg])?;
+        if !out.contains("Success") {
+            anyhow::bail!("Failed to clear data for {pkg}: {out}");
+        }
+        let _ = self.adb.shell(&["input", "keyevent", "KEYCODE_HOME"])?;
+
+        Ok((pkg, app_label))
+    }
+
     pub fn take_screenshot(&self) -> Result<Vec<u8>> {
         self.adb.exec_raw(&["screencap", "-p"])
     }

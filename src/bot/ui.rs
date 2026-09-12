@@ -11,6 +11,7 @@ pub fn help_text(friendly_name: &str) -> String {
         🎬 <b>/status</b> — Live TV app & playback info\n\
         📸 <b>/screen</b> — Take live TV screenshot\n\
         🛑 <b>/kill [app]</b> — Force stop an app\n\
+        🧹 <b>/clear [app]</b> — Wipe app cache & data\n\
         🎮 <b>/remote</b> — Virtual D-pad controller\n\
         🚀 <b>/open [app]</b> — Launch app on TV\n\
         ━━━━━━━━━━━━━━━━━━━━━━━"
@@ -47,14 +48,18 @@ pub fn format_status_card(friendly_name: &str, status: &TvStatus) -> String {
 #[must_use]
 pub fn status_keyboard(package: &str, app_name: &str) -> serde_json::Value {
     let kill_data = format!("kill:{package}");
+    let clear_data = format!("clear:{package}");
     json!({
         "inline_keyboard": [
             [
                 { "text": format!("🛑 Kill {app_name}"), "callback_data": kill_data },
-                { "text": "📸 Screen", "callback_data": "cmd:screen" }
+                { "text": "🧹 Clear Data", "callback_data": clear_data }
             ],
             [
-                { "text": "🎮 Remote", "callback_data": "cmd:remote" },
+                { "text": "📸 Screen", "callback_data": "cmd:screen" },
+                { "text": "🎮 Remote", "callback_data": "cmd:remote" }
+            ],
+            [
                 { "text": "🔄 Refresh", "callback_data": "cmd:status" }
             ]
         ]
@@ -75,10 +80,34 @@ pub fn kill_keyboard() -> serde_json::Value {
             ],
             [
                 { "text": "🛑 Prime Video", "callback_data": "kill:com.amazon.amazonvideo.livingroom" },
-                { "text": "🛑 Disney+", "callback_data": "kill:com.disney.disneyplus" }
+                { "text": "🛑 Hotstar", "callback_data": "kill:in.startv.hotstar" }
             ],
             [
                 { "text": "🛑 Kill Current App", "callback_data": "kill:current" },
+                { "text": "🏠 TV Home", "callback_data": "key:KEYCODE_HOME" }
+            ]
+        ]
+    })
+}
+
+#[must_use]
+pub fn clear_keyboard() -> serde_json::Value {
+    json!({
+        "inline_keyboard": [
+            [
+                { "text": "🧹 Hotstar", "callback_data": "clear:in.startv.hotstar" },
+                { "text": "🧹 YouTube", "callback_data": "clear:com.google.android.youtube.tv" }
+            ],
+            [
+                { "text": "🧹 Netflix", "callback_data": "clear:com.netflix.ninja" },
+                { "text": "🧹 Stremio", "callback_data": "clear:com.frolo.stremio" }
+            ],
+            [
+                { "text": "🧹 Prime Video", "callback_data": "clear:com.amazon.amazonvideo.livingroom" },
+                { "text": "🧹 SmartTube", "callback_data": "clear:com.teamsmart.videomanager.tv" }
+            ],
+            [
+                { "text": "🧹 Clear Current App", "callback_data": "clear:current" },
                 { "text": "🏠 TV Home", "callback_data": "key:KEYCODE_HOME" }
             ]
         ]

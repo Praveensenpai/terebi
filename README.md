@@ -44,8 +44,9 @@
 │  │                        │   │                           │   │                          │  │
 │  │  • /status, /now       ├──►│  • screencap -p (PNG)     ├──►│  • dumpsys window        │  │
 │  │  • /screen             │   │  • am force-stop <pkg>    │   │  • dumpsys media_session │  │
-│  │  • /kill [inline keys] │   │  • input keyevent <key>   │   │  • package friendly name │  │
-│  │  • /remote [D-Pad]     │   │  • connect <ip>:5555      │   │  • track & play state    │  │
+│  │  • /kill [inline keys] │   │  • pm clear <pkg>         │   │  • package friendly name │  │
+│  │  • /clear [inline keys]│   │  • input keyevent <key>   │   │  • track & play state    │  │
+│  │  • /remote [D-Pad]     │   │  • connect <ip>:5555      │   │                          │  │
 │  └────────────────────────┘   └─────────────┬─────────────┘   └──────────────────────────┘  │
 └─────────────────────────────────────────────┼───────────────────────────────────────────────┘
                                               │ Local LAN (ADB over TCP: 5555)
@@ -63,10 +64,11 @@
 | Feature | Description |
 |---|---|
 | **🛑 App Murderer & Force-Stop** | Instantly kill runaway apps (`am force-stop`) with 1-tap inline buttons or `/kill [app]`, returning the TV to Home launcher. |
+| **🧹 App Cache & Data Purge** | Completely reset stuck or corrupt apps (`pm clear`) with 1-tap inline buttons, `/clear [app]`, or CLI to restore clean state. |
 | **🎬 Live Playback Inspector** | Query active foreground apps, parsed media titles, artists/channels, playback state (▶️ / ⏸), and screen power. |
 | **📸 Lossless Screen Capture** | Streams raw TV screenshots via `adb exec-out screencap -p` directly as full-resolution photos to your Telegram chat. |
 | **🎮 Virtual D-Pad Remote** | Full interactive inline keyboard with D-pad (`⬆️`, `⬇️`, `⬅️`, `➡️`, `OK`), Back, Home, Play/Pause, and Volume buttons. |
-| **🚀 Direct App Launcher** | Launch favorite TV apps (`YouTube`, `SmartTube`, `Netflix`, `Stremio`, `VLC`, `Jellyfin`, `Prime`) with `/open [app]`. |
+| **🚀 Direct App Launcher** | Launch favorite TV apps (`Disney+ Hotstar`, `YouTube`, `SmartTube`, `Netflix`, `Stremio`, `VLC`, `Jellyfin`, `Prime`) with `/open [app]`. |
 | **🛡️ Auto-Reconnecting Guardian** | Background ADB connection manager that automatically handles TV sleep, reboots, and network reconnects. |
 | **🔒 Strict Chat Whitelist** | Ignores unauthorized users and requests; only the designated `chat_id` can trigger commands or receive alerts. |
 
@@ -126,12 +128,14 @@ Send these commands directly to your private bot:
 
 | Command | Description | Inline Actions |
 |---|---|---|
-| `/status`, `/now` | View current TV app, media title, playing state, and display status | `[ 🛑 Kill App ]`, `[ 📸 Screen ]`, `[ 🎮 Remote ]`, `[ 🔄 Refresh ]` |
+| `/status`, `/now` | View current TV app, media title, playing state, and display status | `[ 🛑 Kill App ]`, `[ 🧹 Clear Data ]`, `[ 📸 Screen ]`, `[ 🎮 Remote ]`, `[ 🔄 Refresh ]` |
 | `/screen`, `/screenshot` | Take a live screenshot of the TV screen and send as a photo | — |
-| `/kill` | Open the interactive App Murderer menu | Select from YouTube, Netflix, Stremio, SmartTube, etc. |
+| `/kill` | Open the interactive App Murderer menu | Select from Hotstar, YouTube, Netflix, Stremio, SmartTube, etc. |
 | `/kill [app]` | Force stop specific app (e.g. `/kill youtube`, `/kill netflix`, `/kill yt`) | Drops to home screen after termination |
+| `/clear` | Open the interactive Clear App Data menu | Select from Hotstar, YouTube, Netflix, Stremio, etc. |
+| `/clear [app]` | Wipe cache & data for app (e.g. `/clear hotstar`, `/clear youtube`) | Resets app data and returns to home screen |
 | `/remote` | Render virtual D-pad remote control keypad | Directional arrows, OK, Home, Back, Volume +/-, Pause, Mute |
-| `/open [app]` | Launch TV application (e.g. `/open youtube`, `/open stremio`) | — |
+| `/open [app]` | Launch TV application (e.g. `/open hotstar`, `/open youtube`, `/open stremio`) | — |
 | `/help` | Display quick commands guide | — |
 
 ---
@@ -156,8 +160,11 @@ terebi screen -o tv_preview.png
 # Force stop an app via CLI
 terebi kill youtube
 
+# Wipe app data and cache via CLI (pm clear)
+terebi clear hotstar
+
 # Launch an app
-terebi open stremio
+terebi open hotstar
 
 # Send a remote keypress (up, down, left, right, ok, back, home, pause, volup, voldown, mute)
 terebi remote home

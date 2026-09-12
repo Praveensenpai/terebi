@@ -41,6 +41,11 @@ pub const KNOWN_APPS: &[AppInfo] = &[
         icon: "🏰",
     },
     AppInfo {
+        name: "Disney+ Hotstar",
+        package: "in.startv.hotstar",
+        icon: "🏰",
+    },
+    AppInfo {
         name: "Stremio",
         package: "com.frolo.stremio",
         icon: "🎥",
@@ -128,6 +133,9 @@ pub fn resolve_package(input: &str) -> Option<String> {
     }
     if lower == "jellyfin" {
         return Some("org.jellyfin.androidtv".to_string());
+    }
+    if lower == "hotstar" || lower == "disneyhotstar" {
+        return Some("in.startv.hotstar".to_string());
     }
 
     for app in KNOWN_APPS {
@@ -228,6 +236,14 @@ mod tests {
         assert_eq!(
             resolve_package("custom.app.tv"),
             Some("custom.app.tv".to_string())
+        );
+        assert_eq!(
+            resolve_package("hotstar"),
+            Some("in.startv.hotstar".to_string())
+        );
+        assert_eq!(
+            get_app_display("in.startv.hotstar"),
+            ("Disney+ Hotstar", "🏰")
         );
     }
 

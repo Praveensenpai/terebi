@@ -40,6 +40,11 @@ enum Commands {
         /// App package or friendly name (e.g., youtube, netflix, or package id)
         app: String,
     },
+    /// Wipe all data and cache for an app (pm clear)
+    Clear {
+        /// App package or friendly name (e.g., hotstar, youtube, netflix, or package id)
+        app: String,
+    },
     /// Launch an app on TV
     Open {
         /// App package or friendly name (e.g., youtube, netflix)
@@ -156,6 +161,18 @@ fn run_command(cmd: Commands, config: Option<TerebiConfig>) -> Result<()> {
             println!(
                 "  {} Force-stopped {} ({})",
                 "🛑".red().bold(),
+                name.bold(),
+                pkg.dimmed()
+            );
+            Ok(())
+        }
+        Commands::Clear { app } => {
+            let cfg = config.unwrap_or(TerebiConfig::load()?);
+            let tv = TvController::new(cfg.tv_ip, cfg.tv_port);
+            let (pkg, name) = tv.clear_app_data(&app)?;
+            println!(
+                "  {} Cleared data for {} ({})",
+                "🧹".green().bold(),
                 name.bold(),
                 pkg.dimmed()
             );
