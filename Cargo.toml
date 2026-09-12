@@ -1,6 +1,6 @@
 [package]
 name = "terebi"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Praveensenpai <pvnt20@gmail.com>"]
 description = "Aesthetic, pure-Rust Smart TV Telegram controller & watchdog via ADB"
