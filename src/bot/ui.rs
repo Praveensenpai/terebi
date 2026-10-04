@@ -45,7 +45,7 @@ pub fn format_status_card(friendly_name: &str, status: &TvStatus) -> String {
     let track = status.media.title.as_deref().unwrap_or("No media session");
 
     let progress_line = match (status.media.position_ms, status.media.duration_ms) {
-        (Some(pos), Some(dur)) if dur > 0 => {
+        (Some(pos), Some(dur)) if pos > 0 && dur > 0 => {
             let remaining = dur.saturating_sub(pos);
             format!(
                 "\n⏳ <b>Progress:</b> {} / {} <i>({} left)</i>",
@@ -54,7 +54,7 @@ pub fn format_status_card(friendly_name: &str, status: &TvStatus) -> String {
                 format_duration(remaining)
             )
         }
-        (Some(pos), _) => format!("\n⏳ <b>Position:</b> {}", format_duration(pos)),
+        (Some(pos), _) if pos > 0 => format!("\n⏳ <b>Position:</b> {}", format_duration(pos)),
         _ => String::new(),
     };
 
