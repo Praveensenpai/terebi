@@ -18,6 +18,18 @@ pub fn help_text(friendly_name: &str) -> String {
     )
 }
 
+fn format_duration(ms: u64) -> String {
+    let total_secs = ms / 1000;
+    let h = total_secs / 3600;
+    let m = (total_secs % 3600) / 60;
+    let s = total_secs % 60;
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
+
 #[must_use]
 pub fn format_status_card(friendly_name: &str, status: &TvStatus) -> String {
     let state_icon = if status.media.is_playing {
@@ -32,13 +44,27 @@ pub fn format_status_card(friendly_name: &str, status: &TvStatus) -> String {
     };
     let track = status.media.title.as_deref().unwrap_or("No media session");
 
+    let progress_line = match (status.media.position_ms, status.media.duration_ms) {
+        (Some(pos), Some(dur)) if dur > 0 => {
+            let remaining = dur.saturating_sub(pos);
+            format!(
+                "\n⏳ <b>Progress:</b> {} / {} <i>({} left)</i>",
+                format_duration(pos),
+                format_duration(dur),
+                format_duration(remaining)
+            )
+        }
+        (Some(pos), _) => format!("\n⏳ <b>Position:</b> {}", format_duration(pos)),
+        _ => String::new(),
+    };
+
     format!(
         "📺 <b>TEREBI • {friendly_name}</b>\n\
         ━━━━━━━━━━━━━━━━━━━━━━━\n\
         🎬 <b>Foreground App:</b> {} {}\n\
         📦 <b>Package:</b> <code>{}</code>\n\
         🎵 <b>Media:</b> <code>{}</code>\n\
-        ⏱ <b>Playback:</b> {state_icon}\n\
+        ⏱ <b>Playback:</b> {state_icon}{progress_line}\n\
         💡 <b>Screen:</b> {screen_icon}\n\
         ━━━━━━━━━━━━━━━━━━━━━━━",
         status.app_name, status.app_icon, status.package, track

@@ -182,6 +182,8 @@ pub struct MediaMetadata {
     pub artist: Option<String>,
     pub is_playing: bool,
     pub package: Option<String>,
+    pub position_ms: Option<u64>,
+    pub duration_ms: Option<u64>,
 }
 
 #[must_use]
@@ -203,8 +205,15 @@ pub fn parse_media_session(media_dump: &str) -> MediaMetadata {
                     meta.artist = Some(a.to_string());
                 }
             }
-        } else if trimmed.contains("state=PlaybackState {state=3") || trimmed.contains("state=3") {
+        } else if trimmed.contains("state=PlaybackState {state=3")
+            || (trimmed.contains("state=PlaybackState") && trimmed.contains("state=3"))
+        {
             meta.is_playing = true;
+            meta.position_ms = parse_playback_field(trimmed, "position=");
+            meta.duration_ms = parse_playback_field(trimmed, "duration=");
+        } else if trimmed.contains("state=PlaybackState") {
+            meta.position_ms = parse_playback_field(trimmed, "position=");
+            meta.duration_ms = parse_playback_field(trimmed, "duration=");
         } else if trimmed.starts_with("package=") {
             let pkg = trimmed.trim_start_matches("package=").trim();
             if !pkg.is_empty() {
@@ -213,6 +222,13 @@ pub fn parse_media_session(media_dump: &str) -> MediaMetadata {
         }
     }
     meta
+}
+
+fn parse_playback_field(line: &str, field: &str) -> Option<u64> {
+    let start = line.find(field)? + field.len();
+    let rest = &line[start..];
+    let end = rest.find([',', '}', ' ']).unwrap_or(rest.len());
+    rest[..end].trim().parse().ok()
 }
 
 #[cfg(test)]
