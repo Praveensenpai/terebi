@@ -17,6 +17,16 @@ pub const KNOWN_APPS: &[AppInfo] = &[
     },
     AppInfo {
         name: "SmartTube",
+        package: "org.smarttube.stable",
+        icon: "📺",
+    },
+    AppInfo {
+        name: "SmartTube (Beta)",
+        package: "org.smarttube.beta",
+        icon: "📺",
+    },
+    AppInfo {
+        name: "SmartTube",
         package: "com.teamsmart.videomanager.tv",
         icon: "📺",
     },
@@ -116,8 +126,8 @@ pub fn resolve_package(input: &str) -> Option<String> {
     if lower == "cobalt" || lower == "tizentube" {
         return Some("io.gh.reisxd.tizentube.cobalt".to_string());
     }
-    if lower == "smarttube" {
-        return Some("com.teamsmart.videomanager.tv".to_string());
+    if lower == "smarttube" || lower == "st" {
+        return Some("org.smarttube.stable".to_string());
     }
     if lower == "netflix" {
         return Some("com.netflix.ninja".to_string());
@@ -205,6 +215,15 @@ pub fn parse_media_session(media_dump: &str) -> MediaMetadata {
                     meta.artist = Some(a.to_string());
                 }
             }
+            // SmartTube mirrors live playback position/duration as a machine token
+            // (pos=<ms>;dur=<ms>) in the metadata description field, because Android's
+            // dumpsys media_session never exposes a duration= field.
+            if let Some(p) = parse_token(trimmed, "pos=") {
+                meta.position_ms = Some(p);
+            }
+            if let Some(d) = parse_token(trimmed, "dur=") {
+                meta.duration_ms = Some(d);
+            }
         } else if trimmed.contains("state=PlaybackState {state=3")
             || (trimmed.contains("state=PlaybackState") && trimmed.contains("state=3"))
         {
@@ -229,6 +248,16 @@ fn parse_playback_field(line: &str, field: &str) -> Option<u64> {
     let rest = &line[start..];
     let end = rest.find([',', '}', ' ']).unwrap_or(rest.len());
     rest[..end].trim().parse().ok()
+}
+
+/// Parse an unsigned integer that immediately follows `token` in `line`.
+fn parse_token(line: &str, token: &str) -> Option<u64> {
+    let start = line.find(token)? + token.len();
+    let rest = &line[start..];
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    rest[..end].parse().ok()
 }
 
 #[cfg(test)]
@@ -270,5 +299,26 @@ mod tests {
             parse_focused_package(dump),
             Some("com.google.android.youtube.tv".to_string())
         );
+    }
+
+    #[test]
+    fn test_parse_media_session_smarttube_token() {
+        // Real dumpsys order: PlaybackState first, metadata after.
+        let dump = "\
+        state=PlaybackState {state=3, position=0, buffered position=5500, speed=1.0, updated=6598866, actions=2360191, custom actions=[], active item id=0, error=null}\n\
+        metadata: size=6, description=Saturday series, Madhu Gowda, pos=4662595;dur=600000, null";
+        let meta = parse_media_session(dump);
+        assert!(meta.is_playing);
+        assert_eq!(meta.title.as_deref(), Some("Saturday series"));
+        assert_eq!(meta.artist.as_deref(), Some("Madhu Gowda"));
+        assert_eq!(meta.position_ms, Some(4_662_595));
+        assert_eq!(meta.duration_ms, Some(600_000));
+    }
+
+    #[test]
+    fn test_parse_token_variants() {
+        assert_eq!(parse_token("x pos=123;dur=456", "pos="), Some(123));
+        assert_eq!(parse_token("x pos=123;dur=456", "dur="), Some(456));
+        assert_eq!(parse_token("no token here", "pos="), None);
     }
 }

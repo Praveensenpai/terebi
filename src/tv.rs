@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn test_parse_audio_position() {
         let sample = "10-04 18:05:03.786 389 3961 D AudioHw : [00000002][deep-buffer] presentation-position: written=223809600, delays=5008, offset=0, frames=223804592, position=4662595ms, time=4771079ms, estimated-start=108484ms";
-        assert_eq!(parse_audio_position(sample), Some(4662595));
+        assert_eq!(parse_audio_position(sample), Some(4_662_595));
         assert_eq!(parse_audio_position("invalid log line"), None);
     }
 }

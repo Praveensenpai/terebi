@@ -106,7 +106,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
 - **Responsibility**: Core general logic in src/main.rs
 - **Imports**: use anyhow :: Result , use clap :: { Parser , Subcommand } , use colored :: Colorize , use config :: TerebiConfig , use tv :: TvController 
 
-### `src/media.rs` (Role: general, Lines: 274)
+### `src/media.rs` (Role: general, Lines: 324)
 - **Responsibility**: Core general logic in src/media.rs
 - **Types & Enums**:
   ```rust
@@ -120,6 +120,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn parse_focused_package (window_dump : & str) -> Option < String >
   fn parse_media_session (media_dump : & str) -> MediaMetadata
   ```
+- **Notes**: `parse_media_session` also reads the SmartTube machine token `pos=<ms>;dur=<ms>` (mirrored into `METADATA_KEY_DISPLAY_DESCRIPTION`) via private `parse_token`, since `dumpsys media_session` never prints `duration=`.
 
 ### `src/tv.rs` (Role: general, Lines: 158)
 - **Responsibility**: Core general logic in src/tv.rs
