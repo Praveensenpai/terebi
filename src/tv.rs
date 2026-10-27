@@ -1,7 +1,8 @@
 use anyhow::Result;
 
 use crate::adb::AdbDevice;
-use crate::media::{self, get_app_display, MediaMetadata};
+use crate::media::{self, get_app_display};
+use crate::session::{self, MediaMetadata};
 
 #[derive(Debug, Clone)]
 pub struct TvStatus {
@@ -39,7 +40,7 @@ impl TvController {
         let (app_name, app_icon) = get_app_display(&package);
 
         let media_dump = self.adb.shell(&["dumpsys", "media_session"])?;
-        let mut media = media::parse_media_session(&media_dump);
+        let mut media = session::parse_media_session(&media_dump, Some(&package));
 
         if media.position_ms.is_none() || media.position_ms == Some(0) {
             media.position_ms = self.audio_position_ms();

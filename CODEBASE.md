@@ -55,9 +55,9 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn send_photo (client : & Client , token : & str , chat_id : i64 , caption : & str , image_bytes : Vec < u8 > ,) -> Result < () >
   ```
 
-### `src/bot/ui.rs` (Role: tui, Lines: 174)
+### `src/bot/ui.rs` (Role: tui, Lines: 171)
 - **Responsibility**: Core tui logic in src/bot/ui.rs
-- **Imports**: use serde_json :: json , use crate :: tv :: TvStatus 
+- **Imports**: use serde_json :: json , use crate :: session :: format_duration , use crate :: tv :: TvStatus 
 - **Public Functions & Signatures**:
   ```rust
   fn help_text (friendly_name : & str) -> String
@@ -102,29 +102,38 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn discover_tv_ip (port : u16) -> Option < String >
   ```
 
-### `src/main.rs` (Role: general, Lines: 223)
+### `src/main.rs` (Role: general, Lines: 245)
 - **Responsibility**: Core general logic in src/main.rs
 - **Imports**: use anyhow :: Result , use clap :: { Parser , Subcommand } , use colored :: Colorize , use config :: TerebiConfig , use tv :: TvController 
 
-### `src/media.rs` (Role: general, Lines: 324)
+### `src/media.rs` (Role: general, Lines: 229)
 - **Responsibility**: Core general logic in src/media.rs
 - **Types & Enums**:
   ```rust
   pub struct AppInfo
-  pub struct MediaMetadata
   ```
 - **Public Functions & Signatures**:
   ```rust
   fn get_app_display (package : & str) -> (& 'static str , & 'static str)
   fn resolve_package (input : & str) -> Option < String >
   fn parse_focused_package (window_dump : & str) -> Option < String >
-  fn parse_media_session (media_dump : & str) -> MediaMetadata
   ```
-- **Notes**: `parse_media_session` also reads the SmartTube machine token `pos=<ms>;dur=<ms>` (mirrored into `METADATA_KEY_DISPLAY_DESCRIPTION`) via private `parse_token`, since `dumpsys media_session` never prints `duration=`.
 
-### `src/tv.rs` (Role: general, Lines: 158)
+### `src/session.rs` (Role: general, Lines: 196)
+- **Responsibility**: Core general logic in src/session.rs
+- **Types & Enums**:
+  ```rust
+  pub struct MediaMetadata
+  ```
+- **Public Functions & Signatures**:
+  ```rust
+  fn parse_media_session (media_dump : & str , focused_package : Option < & str >) -> MediaMetadata
+  fn format_duration (ms : u64) -> String
+  ```
+
+### `src/tv.rs` (Role: general, Lines: 159)
 - **Responsibility**: Core general logic in src/tv.rs
-- **Imports**: use anyhow :: Result , use crate :: adb :: AdbDevice , use crate :: media :: { self , get_app_display , MediaMetadata } 
+- **Imports**: use anyhow :: Result , use crate :: adb :: AdbDevice , use crate :: media :: { self , get_app_display } , use crate :: session :: { self , MediaMetadata } 
 - **Types & Enums**:
   ```rust
   pub struct TvStatus

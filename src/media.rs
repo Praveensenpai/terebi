@@ -186,80 +186,6 @@ pub fn parse_focused_package(window_dump: &str) -> Option<String> {
     None
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct MediaMetadata {
-    pub title: Option<String>,
-    pub artist: Option<String>,
-    pub is_playing: bool,
-    pub package: Option<String>,
-    pub position_ms: Option<u64>,
-    pub duration_ms: Option<u64>,
-}
-
-#[must_use]
-pub fn parse_media_session(media_dump: &str) -> MediaMetadata {
-    let mut meta = MediaMetadata::default();
-    for line in media_dump.lines() {
-        let trimmed = line.trim();
-        if let Some(pos) = trimmed.find("description=") {
-            let desc = trimmed[pos + "description=".len()..].trim();
-            let parts: Vec<&str> = desc.split(',').map(str::trim).collect();
-            if let Some(t) = parts.first() {
-                if !t.is_empty() && *t != "null" {
-                    meta.title = Some((*t).to_string());
-                }
-            }
-            if parts.len() > 1 {
-                let a = parts[1];
-                if !a.is_empty() && a != "null" {
-                    meta.artist = Some(a.to_string());
-                }
-            }
-            // SmartTube mirrors live playback position/duration as a machine token
-            // (pos=<ms>;dur=<ms>) in the metadata description field, because Android's
-            // dumpsys media_session never exposes a duration= field.
-            if let Some(p) = parse_token(trimmed, "pos=") {
-                meta.position_ms = Some(p);
-            }
-            if let Some(d) = parse_token(trimmed, "dur=") {
-                meta.duration_ms = Some(d);
-            }
-        } else if trimmed.contains("state=PlaybackState {state=3")
-            || (trimmed.contains("state=PlaybackState") && trimmed.contains("state=3"))
-        {
-            meta.is_playing = true;
-            meta.position_ms = parse_playback_field(trimmed, "position=");
-            meta.duration_ms = parse_playback_field(trimmed, "duration=");
-        } else if trimmed.contains("state=PlaybackState") {
-            meta.position_ms = parse_playback_field(trimmed, "position=");
-            meta.duration_ms = parse_playback_field(trimmed, "duration=");
-        } else if trimmed.starts_with("package=") {
-            let pkg = trimmed.trim_start_matches("package=").trim();
-            if !pkg.is_empty() {
-                meta.package = Some(pkg.to_string());
-            }
-        }
-    }
-    meta
-}
-
-fn parse_playback_field(line: &str, field: &str) -> Option<u64> {
-    let start = line.find(field)? + field.len();
-    let rest = &line[start..];
-    let end = rest.find([',', '}', ' ']).unwrap_or(rest.len());
-    rest[..end].trim().parse().ok()
-}
-
-/// Parse an unsigned integer that immediately follows `token` in `line`.
-fn parse_token(line: &str, token: &str) -> Option<u64> {
-    let start = line.find(token)? + token.len();
-    let rest = &line[start..];
-    let end = rest
-        .find(|c: char| !c.is_ascii_digit())
-        .unwrap_or(rest.len());
-    rest[..end].parse().ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,26 +225,5 @@ mod tests {
             parse_focused_package(dump),
             Some("com.google.android.youtube.tv".to_string())
         );
-    }
-
-    #[test]
-    fn test_parse_media_session_smarttube_token() {
-        // Real dumpsys order: PlaybackState first, metadata after.
-        let dump = "\
-        state=PlaybackState {state=3, position=0, buffered position=5500, speed=1.0, updated=6598866, actions=2360191, custom actions=[], active item id=0, error=null}\n\
-        metadata: size=6, description=Saturday series, Madhu Gowda, pos=4662595;dur=600000, null";
-        let meta = parse_media_session(dump);
-        assert!(meta.is_playing);
-        assert_eq!(meta.title.as_deref(), Some("Saturday series"));
-        assert_eq!(meta.artist.as_deref(), Some("Madhu Gowda"));
-        assert_eq!(meta.position_ms, Some(4_662_595));
-        assert_eq!(meta.duration_ms, Some(600_000));
-    }
-
-    #[test]
-    fn test_parse_token_variants() {
-        assert_eq!(parse_token("x pos=123;dur=456", "pos="), Some(123));
-        assert_eq!(parse_token("x pos=123;dur=456", "dur="), Some(456));
-        assert_eq!(parse_token("no token here", "pos="), None);
     }
 }

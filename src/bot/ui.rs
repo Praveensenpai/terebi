@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use crate::session::format_duration;
 use crate::tv::TvStatus;
 
 #[must_use]
@@ -18,18 +19,6 @@ pub fn help_text(friendly_name: &str) -> String {
     )
 }
 
-fn format_duration(ms: u64) -> String {
-    let total_secs = ms / 1000;
-    let h = total_secs / 3600;
-    let m = (total_secs % 3600) / 60;
-    let s = total_secs % 60;
-    if h > 0 {
-        format!("{h}:{m:02}:{s:02}")
-    } else {
-        format!("{m}:{s:02}")
-    }
-}
-
 #[must_use]
 pub fn format_status_card(friendly_name: &str, status: &TvStatus) -> String {
     let state_icon = if status.media.is_playing {
@@ -42,7 +31,15 @@ pub fn format_status_card(friendly_name: &str, status: &TvStatus) -> String {
     } else {
         "🔴 Off / Sleep"
     };
-    let track = status.media.title.as_deref().unwrap_or("No media session");
+    let track = if status.media.has_session {
+        status
+            .media
+            .title
+            .as_deref()
+            .unwrap_or("Playing (title not exposed by app)")
+    } else {
+        status.media.title.as_deref().unwrap_or("No media session")
+    };
 
     let progress_line = match (status.media.position_ms, status.media.duration_ms) {
         (Some(pos), Some(dur)) if pos > 0 && dur > 0 => {

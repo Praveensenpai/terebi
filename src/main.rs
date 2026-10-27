@@ -7,6 +7,7 @@ mod bot;
 mod config;
 mod discovery;
 mod media;
+mod session;
 mod tv;
 
 use config::TerebiConfig;
@@ -101,11 +102,32 @@ fn handle_status(tv: &TvController) -> Result<()> {
 
     println!("  {} {}", "App:".bold(), status.app_name.cyan());
     println!("  {} {}", "Package:".bold(), status.package.dimmed());
-    if let Some(ref title) = status.media.title {
-        println!("  {} {}", "Track/Video:".bold(), title.white().bold());
+    match status.media.title.as_deref() {
+        Some(title) => println!("  {} {}", "Track/Video:".bold(), title.white().bold()),
+        None if status.media.has_session => println!(
+            "  {} {}",
+            "Track/Video:".bold(),
+            "(title not exposed by this app)".dimmed()
+        ),
+        None => {}
     }
     if let Some(ref artist) = status.media.artist {
         println!("  {} {}", "Artist/Channel:".bold(), artist.dimmed());
+    }
+    if let Some(pos) = status.media.position_ms {
+        if pos > 0 {
+            let line = status.media.duration_ms.map_or_else(
+                || session::format_duration(pos),
+                |dur| {
+                    format!(
+                        "{} / {}",
+                        session::format_duration(pos),
+                        session::format_duration(dur)
+                    )
+                },
+            );
+            println!("  {} {}", "Position:".bold(), line);
+        }
     }
     println!("  {} {}", "State:".bold(), state_str);
     println!("  {} {}", "Display:".bold(), pwr_str);
