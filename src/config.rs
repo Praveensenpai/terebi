@@ -68,11 +68,21 @@ pub struct TerebiConfig {
     pub logging: LogConfig,
 }
 
+/// Resolve the config file path from the two env values it depends on.
+fn resolve_config_path(xdg: Option<&str>, home: &str) -> PathBuf {
+    match xdg {
+        Some(dir) if !dir.is_empty() => Path::new(dir).join("terebi/config.json"),
+        _ => Path::new(home).join(".config/terebi/config.json"),
+    }
+}
+
 impl TerebiConfig {
+    /// `$XDG_CONFIG_HOME/terebi/config.json`, falling back to `~/.config`.
     #[must_use]
     pub fn config_path() -> PathBuf {
+        let xdg = std::env::var("XDG_CONFIG_HOME").ok();
         let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-        Path::new(&home).join(".config/terebi/config.json")
+        resolve_config_path(xdg.as_deref(), &home)
     }
 
     pub fn load() -> Result<Self> {
@@ -93,9 +103,30 @@ impl TerebiConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
+        if path.exists() {
+            let backup = path.with_extension("json.bak");
+            fs::copy(&path, &backup)
+                .with_context(|| format!("Failed to back up {}", path.display()))?;
+        }
         let data = serde_json::to_string_pretty(self)?;
         fs::write(&path, data)?;
         Ok(())
+    }
+
+    fn prompt_line(label: &str, default: Option<&str>) -> Result<String> {
+        match default {
+            Some(d) => print!("  Enter {label} [{d}]: "),
+            None => print!("  Enter {label}: "),
+        }
+        io::stdout().flush()?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim();
+        let value = match (trimmed.is_empty(), default) {
+            (true, Some(d)) => d.to_string(),
+            _ => trimmed.to_string(),
+        };
+        Ok(value)
     }
 
     pub fn prompt_setup() -> Result<Self> {
@@ -106,37 +137,10 @@ impl TerebiConfig {
         );
         println!("  {}\n", "─".repeat(40).dimmed());
 
-        print!("  Enter Telegram Bot Token: ");
-        io::stdout().flush()?;
-        let mut token = String::new();
-        io::stdin().read_line(&mut token)?;
-        let bot_token = token.trim().to_string();
-
-        print!("  Enter Authorized Telegram Chat ID: ");
-        io::stdout().flush()?;
-        let mut chat = String::new();
-        io::stdin().read_line(&mut chat)?;
-        let chat_id = chat.trim().to_string();
-
-        print!("  Enter TV IP Address [auto]: ");
-        io::stdout().flush()?;
-        let mut ip = String::new();
-        io::stdin().read_line(&mut ip)?;
-        let tv_ip = if ip.trim().is_empty() {
-            "auto".to_string()
-        } else {
-            ip.trim().to_string()
-        };
-
-        print!("  Enter TV Name [Living Room TV]: ");
-        io::stdout().flush()?;
-        let mut name = String::new();
-        io::stdin().read_line(&mut name)?;
-        let friendly_name = if name.trim().is_empty() {
-            "Living Room TV".to_string()
-        } else {
-            name.trim().to_string()
-        };
+        let bot_token = Self::prompt_line("Telegram Bot Token", None)?;
+        let chat_id = Self::prompt_line("Authorized Telegram Chat ID", None)?;
+        let tv_ip = Self::prompt_line("TV IP Address", Some("auto"))?;
+        let friendly_name = Self::prompt_line("TV Name", Some("Living Room TV"))?;
 
         if bot_token.is_empty() || chat_id.is_empty() {
             anyhow::bail!("Bot token and chat ID cannot be empty.");
@@ -183,5 +187,18 @@ mod tests {
         assert!(cfg.logging.enabled);
         assert!(cfg.logging.path().ends_with("tvlogs"));
         Ok(())
+    }
+
+    #[test]
+    fn test_resolve_config_path_prefers_xdg() {
+        let path = resolve_config_path(Some("/tmp/xdg"), "/home/u");
+        assert_eq!(path, Path::new("/tmp/xdg/terebi/config.json"));
+    }
+
+    #[test]
+    fn test_resolve_config_path_falls_back_to_home() {
+        let expected = Path::new("/home/u/.config/terebi/config.json");
+        assert_eq!(resolve_config_path(None, "/home/u"), expected);
+        assert_eq!(resolve_config_path(Some(""), "/home/u"), expected);
     }
 }
