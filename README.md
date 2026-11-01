@@ -209,7 +209,7 @@ terebi connect
 
 ## 🔧 Configuration
 
-Settings are stored at `~/.config/terebi/config.json`:
+Settings are stored at `$XDG_CONFIG_HOME/terebi/config.json` (`~/.config/terebi/config.json` by default). Running setup again backs up the previous file to `config.json.bak`:
 
 ```json
 {

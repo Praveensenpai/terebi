@@ -150,20 +150,22 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn run_bot (config : & TerebiConfig) -> Result < () >
   ```
 
-### `src/config.rs` (Role: general, Lines: 187)
-- **Responsibility**: Core general logic in src/config.rs
+### `src/config.rs` (Role: general, Lines: 204)
+- **Responsibility**: Config load/save and interactive setup wizard; honors `XDG_CONFIG_HOME` and backs up the previous file on overwrite
 - **Imports**: use anyhow :: { Context , Result } , use colored :: Colorize , use serde :: { Deserialize , Serialize } , use std :: fs , use std :: io :: { self , Write } , use std :: path :: { Path , PathBuf } 
 - **Types & Enums**:
   ```rust
+  pub struct LogConfig
   pub struct TerebiConfig
   ```
 - **Public Functions & Signatures**:
   ```rust
-  fn config_path () -> PathBuf
+  fn path (& self) -> PathBuf            // LogConfig, expands leading ~/
+  fn config_path () -> PathBuf           // $XDG_CONFIG_HOME else ~/.config
   fn load () -> Result < Self >
-  fn save (& self) -> Result < () >
+  fn save (& self) -> Result < () >      // copies to config.json.bak first
   fn prompt_setup () -> Result < Self >
-  ```
+  ```</｜｜DSML｜｜>
 
 ### `src/discovery.rs` (Role: general, Lines: 80)
 - **Responsibility**: Core general logic in src/discovery.rs
