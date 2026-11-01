@@ -215,9 +215,25 @@ Settings are stored at `~/.config/terebi/config.json`:
   "chat_id": "YOUR_TELEGRAM_CHAT_ID",
   "tv_ip": "192.168.1.50",
   "tv_port": 5555,
-  "friendly_name": "Living Room TV"
+  "friendly_name": "Living Room TV",
+  "logging": {
+    "enabled": false,
+    "dir": "~/.local/share/terebi/logs"
+  }
 }
 ```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `bot_token` | string | Telegram bot token from BotFather |
+| `chat_id` | string | The only chat allowed to control the TV |
+| `tv_ip` | string | TV address, or `auto` to discover it on the LAN |
+| `tv_port` | number | ADB port, normally `5555` |
+| `friendly_name` | string | Name shown in Telegram cards |
+| `logging.enabled` | bool | Start remote-key capture when the daemon boots |
+| `logging.dir` | string | Log directory; `~/` is expanded. Files are `YYYY-MM-DD.log` |
+
+`/log on` and `/log off` override `logging.enabled` at runtime without editing the file.
 
 Run `terebi setup` at any time to reconfigure credentials interactively.
 
