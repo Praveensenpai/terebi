@@ -1,1 +1,7 @@
 /target
+
+# Local credentials and runtime output
+config.json
+config.json.bak
+.env
+*.png
