@@ -178,10 +178,10 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn discover_tv_ip (port : u16) -> Option < String >
   ```
 
-### `src/main.rs` (Role: general, Lines: 322)
+### `src/main.rs` (Role: general, Lines: 314)
 - **Responsibility**: CLI entrypoint, subcommand dispatch, colored terminal output
 - **Imports**: use anyhow :: Result , use clap :: { Parser , Subcommand } , use colored :: Colorize , use config :: TerebiConfig , use tv :: TvController
-- **Subcommands**: `daemon`, `status`, `screen`, `kill`, `clear`, `apps`, `open`, `remote`, `connect`, `setup` 
+- **Subcommands**: `daemon`, `status`, `screen`, `kill`, `clear`, `apps`, `open`, `remote`, `connect`, `logs`, `text`, `setup` 
 
 ### `src/media.rs` (Role: general, Lines: 229)
 - **Responsibility**: Core general logic in src/media.rs
