@@ -213,6 +213,55 @@ fn handle_text(tv: &TvController) -> Result<()> {
     Ok(())
 }
 
+fn build_tv(config: Option<TerebiConfig>) -> Result<TvController> {
+    let cfg = match config {
+        Some(cfg) => cfg,
+        None => TerebiConfig::load()?,
+    };
+    Ok(TvController::new(cfg.tv_ip, cfg.tv_port))
+}
+
+fn handle_kill(tv: &TvController, app: &str) -> Result<()> {
+    let (pkg, name) = tv.force_stop(app)?;
+    println!(
+        "  {} Force-stopped {} ({})",
+        "🛑".red().bold(),
+        name.bold(),
+        pkg.dimmed()
+    );
+    Ok(())
+}
+
+fn handle_clear(tv: &TvController, app: &str) -> Result<()> {
+    let (pkg, name) = tv.clear_app_data(app)?;
+    println!(
+        "  {} Cleared data for {} ({})",
+        "🧹".green().bold(),
+        name.bold(),
+        pkg.dimmed()
+    );
+    Ok(())
+}
+
+fn handle_open(tv: &TvController, app: &str) -> Result<()> {
+    let name = tv.launch_app(app)?;
+    println!("  {} Launched {}", "🚀".green().bold(), name.bold());
+    Ok(())
+}
+
+fn handle_connect(tv: &TvController) -> Result<()> {
+    println!("  🔌 Connecting to TV at {}...", tv.adb.target().cyan());
+    if tv.adb.connect()? {
+        println!("  {} Connected successfully.", "✔".green().bold());
+    } else {
+        println!(
+            "  {} Connection failed or pending authorization.",
+            "✖".red().bold()
+        );
+    }
+    Ok(())
+}
+
 fn run_command(cmd: Commands, config: Option<TerebiConfig>) -> Result<()> {
     match cmd {
         Commands::Setup => {
@@ -225,84 +274,27 @@ fn run_command(cmd: Commands, config: Option<TerebiConfig>) -> Result<()> {
             bot::run_bot(&cfg)
         }
         Commands::Apps => {
-            let cfg = config.unwrap_or(TerebiConfig::load()?);
-            let tv = TvController::new(cfg.tv_ip, cfg.tv_port);
             print_banner();
-            handle_apps(&tv)
+            handle_apps(&build_tv(config)?)
         }
         Commands::Status => {
-            let cfg = config.unwrap_or(TerebiConfig::load()?);
-            let tv = TvController::new(cfg.tv_ip, cfg.tv_port);
             print_banner();
-            handle_status(&tv)
+            handle_status(&build_tv(config)?)
         }
-        Commands::Screen { output } => {
-            let cfg = config.unwrap_or(TerebiConfig::load()?);
-            let tv = TvController::new(cfg.tv_ip, cfg.tv_port);
-            handle_screen(&tv, &output)
-        }
-        Commands::Kill { app } => {
-            let cfg = config.unwrap_or(TerebiConfig::load()?);
-            let tv = TvController::new(cfg.tv_ip, cfg.tv_port);
-            let (pkg, name) = tv.force_stop(&app)?;
-            println!(
-                "  {} Force-stopped {} ({})",
-                "🛑".red().bold(),
-                name.bold(),
-                pkg.dimmed()
-            );
-            Ok(())
-        }
-        Commands::Clear { app } => {
-            let cfg = config.unwrap_or(TerebiConfig::load()?);
-            let tv = TvController::new(cfg.tv_ip, cfg.tv_port);
-            let (pkg, name) = tv.clear_app_data(&app)?;
-            println!(
-                "  {} Cleared data for {} ({})",
-                "🧹".green().bold(),
-                name.bold(),
-                pkg.dimmed()
-            );
-            Ok(())
-        }
-        Commands::Open { app } => {
-            let cfg = config.unwrap_or(TerebiConfig::load()?);
-            let tv = TvController::new(cfg.tv_ip, cfg.tv_port);
-            let name = tv.launch_app(&app)?;
-            println!("  {} Launched {}", "🚀".green().bold(), name.bold());
-            Ok(())
-        }
-        Commands::Remote { key } => {
-            let cfg = config.unwrap_or(TerebiConfig::load()?);
-            let tv = TvController::new(cfg.tv_ip, cfg.tv_port);
-            handle_remote(&tv, &key)
-        }
-        Commands::Connect => {
-            let cfg = config.unwrap_or(TerebiConfig::load()?);
-            let tv = TvController::new(cfg.tv_ip, cfg.tv_port);
-            println!("  🔌 Connecting to TV at {}...", tv.adb.target().cyan());
-            let ok = tv.adb.connect()?;
-            if ok {
-                println!("  {} Connected successfully.", "✔".green().bold());
-            } else {
-                println!(
-                    "  {} Connection failed or pending authorization.",
-                    "✖".red().bold()
-                );
-            }
-            Ok(())
-        }
+        Commands::Screen { output } => handle_screen(&build_tv(config)?, &output),
+        Commands::Kill { app } => handle_kill(&build_tv(config)?, &app),
+        Commands::Clear { app } => handle_clear(&build_tv(config)?, &app),
+        Commands::Open { app } => handle_open(&build_tv(config)?, &app),
+        Commands::Remote { key } => handle_remote(&build_tv(config)?, &key),
+        Commands::Connect => handle_connect(&build_tv(config)?),
         Commands::Logs { lines } => {
             let cfg = config.unwrap_or(TerebiConfig::load()?);
-            let dir = cfg.logging.path();
             print_banner();
-            handle_logs(&dir, lines)
+            handle_logs(&cfg.logging.path(), lines)
         }
         Commands::Text => {
-            let cfg = config.unwrap_or(TerebiConfig::load()?);
-            let tv = TvController::new(cfg.tv_ip, cfg.tv_port);
             print_banner();
-            handle_text(&tv)
+            handle_text(&build_tv(config)?)
         }
     }
 }
