@@ -80,6 +80,8 @@ jobs:
       - name: Release to GitHub
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
           files: |
             dist-all/*.tar.gz
             dist-all/SHA256SUMS.txt
