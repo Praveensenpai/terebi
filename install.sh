@@ -110,7 +110,11 @@ configure_and_connect() {
   "chat_id": "YOUR_TELEGRAM_CHAT_ID",
   "tv_ip": "auto",
   "tv_port": 5555,
-  "friendly_name": "Living Room TV"
+  "friendly_name": "Living Room TV",
+  "logging": {
+    "enabled": false,
+    "dir": "~/.local/share/terebi/logs"
+  }
 }
 EOF
             log_info "Created template config at ${CONFIG_DIR}/config.json.example"
