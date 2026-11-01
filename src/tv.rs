@@ -121,6 +121,21 @@ impl TvController {
         self.adb.exec_raw(&["screencap", "-p"])
     }
 
+    /// Dump the current UI hierarchy and return the unique visible texts.
+    ///
+    /// Typed characters cannot be streamed over ADB, so text input is captured
+    /// on demand from the accessibility node tree instead.
+    pub fn screen_texts(&self) -> Result<Vec<String>> {
+        const REMOTE: &str = "/sdcard/terebi_ui.xml";
+        let dump = self.adb.shell(&["uiautomator", "dump", REMOTE])?;
+        if !dump.contains("dumped to") {
+            anyhow::bail!("uiautomator dump failed: {}", dump.trim());
+        }
+        let xml = self.adb.shell(&["cat", REMOTE])?;
+        let _ = self.adb.shell(&["rm", "-f", REMOTE]);
+        Ok(parse_ui_texts(&xml))
+    }
+
     pub fn send_key(&self, keycode: &str) -> Result<()> {
         let _ = self.adb.shell(&["input", "keyevent", keycode])?;
         Ok(())
@@ -149,6 +164,39 @@ impl TvController {
     }
 }
 
+/// Pull unique non-empty label values out of a uiautomator XML dump.
+#[must_use]
+pub fn parse_ui_texts(xml: &str) -> Vec<String> {
+    const ATTRS: [&str; 2] = ["text=", "content-desc="];
+    const QUOTE: char = '\u{22}';
+    let mut out: Vec<String> = Vec::new();
+    for attr in ATTRS {
+        let marker = format!("{attr}{QUOTE}");
+        let mut rest = xml;
+        while let Some(pos) = rest.find(&marker) {
+            rest = &rest[pos + marker.len()..];
+            let Some(end) = rest.find(QUOTE) else { break };
+            let value = unescape(&rest[..end]);
+            let value = value.trim();
+            if !value.is_empty() && !out.iter().any(|seen| seen == value) {
+                out.push(value.to_string());
+            }
+            rest = &rest[end + 1..];
+        }
+    }
+    out
+}
+
+/// Decode the five XML entities `uiautomator` emits in attribute values.
+fn unescape(value: &str) -> String {
+    value
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+}
+
 fn parse_audio_position(line: &str) -> Option<u64> {
     let marker = "position=";
     let start = line.find(marker)? + marker.len();
@@ -160,6 +208,31 @@ fn parse_audio_position(line: &str) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_ui_texts_dedupes_and_skips_blank() {
+        let xml = r#"<node text="Search" /><node text="" /><node text="Search" /><node text="Sign in" />"#;
+        assert_eq!(parse_ui_texts(xml), vec!["Search", "Sign in"]);
+    }
+
+    #[test]
+    fn test_parse_ui_texts_includes_content_desc() {
+        let attr = concat!("content-", "desc=");
+        let xml = format!(r#"<node text="Play" /><node {attr}"Episodes" />"#);
+        assert_eq!(parse_ui_texts(&xml), vec!["Play", "Episodes"]);
+    }
+
+    #[test]
+    fn test_parse_ui_texts_unescapes_entities() {
+        let xml = r#"<node text="Settings &gt; Battery &amp; Power" />"#;
+        assert_eq!(parse_ui_texts(xml), vec!["Settings > Battery & Power"]);
+    }
+
+    #[test]
+    fn test_parse_ui_texts_handles_missing_text() {
+        assert_eq!(parse_ui_texts("<hierarchy />"), Vec::<String>::new());
+        assert_eq!(parse_ui_texts("text=\"unterminated"), Vec::<String>::new());
+    }
 
     #[test]
     fn test_parse_audio_position() {

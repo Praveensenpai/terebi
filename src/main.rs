@@ -7,6 +7,7 @@ mod apps;
 mod bot;
 mod config;
 mod discovery;
+mod input_log;
 mod media;
 mod session;
 mod tv;
@@ -42,7 +43,7 @@ enum Commands {
         /// App package or friendly name (e.g., youtube, netflix, or package id)
         app: String,
     },
-    /// Wipe all data and cache for an app (pm clear)
+    /// Erase all app data like a fresh install (pm clear)
     Clear {
         /// App package or friendly name (e.g., hotstar, youtube, netflix, or package id)
         app: String,
@@ -61,6 +62,14 @@ enum Commands {
     },
     /// Connect to TV ADB interface
     Connect,
+    /// Show the tail of the newest remote-key log
+    Logs {
+        /// Number of lines to show (default: 40)
+        #[arg(short, long, default_value_t = 40)]
+        lines: usize,
+    },
+    /// Read the text currently visible on the TV screen
+    Text,
     /// Run interactive setup wizard
     Setup,
 }
@@ -171,6 +180,39 @@ fn handle_apps(tv: &TvController) -> Result<()> {
     Ok(())
 }
 
+fn handle_logs(dir: &std::path::Path, count: usize) -> Result<()> {
+    let Some(path) = input_log::latest_log(dir) else {
+        println!(
+            "  ℹ No key logs yet in {}.\n  Start capture with `terebi daemon` after enabling logging.",
+            dir.display()
+        );
+        return Ok(());
+    };
+    let name = path
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().to_string());
+    let lines = input_log::tail(&path, count)?;
+    println!("  🗒 {} ({} lines):", name.bold(), lines.len());
+    for line in lines {
+        println!("  {line}");
+    }
+    Ok(())
+}
+
+fn handle_text(tv: &TvController) -> Result<()> {
+    println!("  🔎 Reading on-screen text...");
+    let texts = tv.screen_texts()?;
+    if texts.is_empty() {
+        println!("  ℹ No text nodes found on the current screen.");
+        return Ok(());
+    }
+    println!("  🔎 {} text node(s):", texts.len());
+    for text in texts {
+        println!("  • {text}");
+    }
+    Ok(())
+}
+
 fn run_command(cmd: Commands, config: Option<TerebiConfig>) -> Result<()> {
     match cmd {
         Commands::Setup => {
@@ -249,6 +291,18 @@ fn run_command(cmd: Commands, config: Option<TerebiConfig>) -> Result<()> {
                 );
             }
             Ok(())
+        }
+        Commands::Logs { lines } => {
+            let cfg = config.unwrap_or(TerebiConfig::load()?);
+            let dir = cfg.logging.path();
+            print_banner();
+            handle_logs(&dir, lines)
+        }
+        Commands::Text => {
+            let cfg = config.unwrap_or(TerebiConfig::load()?);
+            let tv = TvController::new(cfg.tv_ip, cfg.tv_port);
+            print_banner();
+            handle_text(&tv)
         }
     }
 }

@@ -3,5 +3,9 @@
   "chat_id": "123456789",
   "tv_ip": "192.168.1.50",
   "tv_port": 5555,
-  "friendly_name": "Living Room TV"
+  "friendly_name": "Living Room TV",
+  "logging": {
+    "enabled": false,
+    "dir": "~/.local/share/terebi/logs"
+  }
 }

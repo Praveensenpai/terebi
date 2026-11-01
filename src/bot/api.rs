@@ -93,6 +93,17 @@ pub fn answer_callback(client: &Client, token: &str, cb_id: &str, text: &str) ->
     Ok(())
 }
 
+/// Register the bot's `/` command menu so every command is discoverable.
+pub fn set_my_commands(client: &Client, token: &str, commands: &serde_json::Value) -> Result<()> {
+    let url = format!("https://api.telegram.org/bot{token}/setMyCommands");
+    client
+        .post(&url)
+        .json(&json!({ "commands": commands }))
+        .send()?
+        .error_for_status()?;
+    Ok(())
+}
+
 pub fn send_photo(
     client: &Client,
     token: &str,

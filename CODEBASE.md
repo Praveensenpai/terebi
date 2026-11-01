@@ -15,7 +15,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
 
 ## 3. Module & Interface Skeleton
 
-### `src/adb.rs` (Role: general, Lines: 146)
+### `src/adb.rs` (Role: general, Lines: 237)
 - **Responsibility**: Core general logic in src/adb.rs
 - **Imports**: use anyhow :: { Context , Result } , use std :: process :: Command , use std :: sync :: { Arc , Mutex } , use std :: time :: Duration , use crate :: discovery 
 - **Types & Enums**:
@@ -32,9 +32,11 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn ensure_connected (& self) -> Result < () >
   fn shell (& self , args : & [& str]) -> Result < String >
   fn exec_raw (& self , args : & [& str]) -> Result < Vec < u8 > >
+  const ADB_TIMEOUT : Duration = 20s (per-call hard deadline)
+  const ADB_TIMEOUT : Duration = 20s (per-call hard deadline)
   ```
 
-### `src/bot/api.rs` (Role: api, Lines: 116)
+### `src/bot/api.rs` (Role: api, Lines: 127)
 - **Responsibility**: Core api logic in src/bot/api.rs
 - **Imports**: use anyhow :: Result , use reqwest :: blocking :: multipart :: Part , use reqwest :: blocking :: { multipart , Client } , use serde :: Deserialize , use serde_json :: json 
 - **Types & Enums**:
@@ -55,7 +57,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn send_photo (client : & Client , token : & str , chat_id : i64 , caption : & str , image_bytes : Vec < u8 > ,) -> Result < () >
   ```
 
-### `src/apps.rs` (Role: domain, Lines: 215)
+### `src/apps.rs` (Role: domain, Lines: 233)
 - **Responsibility**: Installed-package listing, usage ranking, pagination helpers
 - **Imports**: use std :: cmp :: Ordering , use std :: collections :: HashMap , use crate :: media :: get_app_display
 - **Constants**: `PAGE_SIZE: usize = 10`
@@ -88,7 +90,41 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   ```
 - **Callback Protocol**: `clearlist:<page>`, `clearrefresh`, `clearask:<index|package>`, `clear:<package>` (confirm always encodes the package, never an index)
 
-### `src/bot/ui.rs` (Role: tui, Lines: 247)
+### `src/input_log.rs` (Role: infra, Lines: 366)
+- **Responsibility**: Remote-key capture from the WindowManager logcat channel, daily-file rotation, log tailing
+- **Imports**: anyhow, std::fs, std::io, std::path, std::process, std::sync (Arc, Mutex, AtomicBool), std::thread, crate::adb
+- **Types & Enums**:
+  ```rust
+  pub struct KeyEntry // date, time, key, action
+  struct DailyWriter
+  pub struct InputLogger
+  ```
+- **Public Functions & Signatures**:
+  ```rust
+  fn to_line (& self) -> String
+  pub fn parse_key_line (line : & str) -> Option < KeyEntry >
+  fn start (adb : & AdbDevice , dir : & Path) -> Result < Self >
+  fn is_running (& self) -> bool
+  fn stop (& mut self)
+  pub fn latest_log (dir : & Path) -> Option < PathBuf >
+  pub fn tail (path : & Path , count : usize) -> Result < Vec < String > >
+  ```
+
+### `src/bot/logs.rs` (Role: api, Lines: 201)
+- **Responsibility**: Telegram handlers for key-capture control, log tailing and on-screen text
+- **Imports**: anyhow::Result, serde_json::json, crate::bot (api, BotContext), crate::input_log
+- **Public Functions & Signatures**:
+  ```rust
+  fn escape_html (text : & str) -> String
+  fn send_log_tail (ctx : & BotContext , chat_id : i64)
+  fn handle_log_toggle (ctx : & BotContext , chat_id : i64 , arg : Option < & str >)
+  fn start_capture (ctx : & BotContext , chat_id : i64)
+  fn stop_capture (ctx : & BotContext , chat_id : i64)
+  fn send_capture_status (ctx : & BotContext , chat_id : i64)
+  fn send_screen_text (ctx : & BotContext , chat_id : i64)
+  ```
+
+### `src/bot/ui.rs` (Role: tui, Lines: 392)
 - **Responsibility**: Core tui logic in src/bot/ui.rs
 - **Imports**: use serde_json :: json , use crate :: apps :: { display_name , page_count , page_slice } , use crate :: session :: format_duration , use crate :: tv :: TvStatus
 - **Public Functions & Signatures**:
@@ -102,7 +138,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn remote_keyboard () -> serde_json :: Value
   ```
 
-### `src/bot.rs` (Role: general, Lines: 300)
+### `src/bot.rs` (Role: general, Lines: 330)
 - **Responsibility**: Core general logic in src/bot.rs
 - **Imports**: use anyhow :: { Context , Result } , use reqwest :: blocking :: Client , use std :: cell :: RefCell , use std :: time :: Duration , use crate :: config :: TerebiConfig , use crate :: tv :: TvController , use api :: { answer_callback , fetch_updates , send_photo , send_text , CallbackQuery , Message , User } , use ui :: { format_status_card , help_text , kill_keyboard , remote_keyboard , status_keyboard , } 
 - **Types & Enums**:
@@ -114,7 +150,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn run_bot (config : & TerebiConfig) -> Result < () >
   ```
 
-### `src/config.rs` (Role: general, Lines: 136)
+### `src/config.rs` (Role: general, Lines: 187)
 - **Responsibility**: Core general logic in src/config.rs
 - **Imports**: use anyhow :: { Context , Result } , use colored :: Colorize , use serde :: { Deserialize , Serialize } , use std :: fs , use std :: io :: { self , Write } , use std :: path :: { Path , PathBuf } 
 - **Types & Enums**:
@@ -140,7 +176,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn discover_tv_ip (port : u16) -> Option < String >
   ```
 
-### `src/main.rs` (Role: general, Lines: 268)
+### `src/main.rs` (Role: general, Lines: 322)
 - **Responsibility**: CLI entrypoint, subcommand dispatch, colored terminal output
 - **Imports**: use anyhow :: Result , use clap :: { Parser , Subcommand } , use colored :: Colorize , use config :: TerebiConfig , use tv :: TvController
 - **Subcommands**: `daemon`, `status`, `screen`, `kill`, `clear`, `apps`, `open`, `remote`, `connect`, `setup` 
@@ -170,7 +206,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn format_duration (ms : u64) -> String
   ```
 
-### `src/tv.rs` (Role: general, Lines: 170)
+### `src/tv.rs` (Role: general, Lines: 243)
 - **Responsibility**: Core general logic in src/tv.rs
 - **Imports**: use anyhow :: Result , use crate :: adb :: AdbDevice , use crate :: media :: { self , get_app_display } , use crate :: session :: { self , MediaMetadata } 
 - **Types & Enums**:
@@ -186,8 +222,10 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn clear_app_data (& self , query : & str) -> Result < (String , String) >
   fn list_apps (& self) -> Result < Vec < String > >
   fn take_screenshot (& self) -> Result < Vec < u8 > >
+  fn screen_texts (& self) -> Result < Vec < String > >
   fn send_key (& self , keycode : & str) -> Result < () >
   fn launch_app (& self , query : & str) -> Result < String >
+  pub fn parse_ui_texts (xml : & str) -> Vec < String >
   ```
 
 ## 4. Execution Lifecycle Trace

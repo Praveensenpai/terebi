@@ -17,6 +17,43 @@ fn default_name() -> String {
     "Smart TV".to_string()
 }
 
+fn default_log_dir() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    format!("{home}/.local/share/terebi/logs")
+}
+
+/// Remote-key capture settings.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct LogConfig {
+    /// Start the logcat reader when the daemon boots.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Directory holding one `YYYY-MM-DD.log` file per TV day.
+    #[serde(default = "default_log_dir")]
+    pub dir: String,
+}
+
+impl Default for LogConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            dir: default_log_dir(),
+        }
+    }
+}
+
+impl LogConfig {
+    /// Resolved log directory, expanding a leading `~/`.
+    #[must_use]
+    pub fn path(&self) -> PathBuf {
+        if let Some(rest) = self.dir.strip_prefix("~/") {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            return Path::new(&home).join(rest);
+        }
+        PathBuf::from(&self.dir)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct TerebiConfig {
     pub bot_token: String,
@@ -27,6 +64,8 @@ pub struct TerebiConfig {
     pub tv_port: u16,
     #[serde(default = "default_name")]
     pub friendly_name: String,
+    #[serde(default)]
+    pub logging: LogConfig,
 }
 
 impl TerebiConfig {
@@ -109,6 +148,7 @@ impl TerebiConfig {
             tv_ip,
             tv_port: 5555,
             friendly_name,
+            logging: LogConfig::default(),
         };
 
         config.save()?;
@@ -131,6 +171,17 @@ mod tests {
         let cfg: TerebiConfig = serde_json::from_str(json)?;
         assert_eq!(cfg.tv_port, 5555);
         assert_eq!(cfg.friendly_name, "Smart TV");
+        assert!(!cfg.logging.enabled);
+        assert!(cfg.logging.dir.ends_with("/.local/share/terebi/logs"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_logging_block_parses() -> Result<(), Box<dyn std::error::Error>> {
+        let json = r#"{"bot_token": "t", "chat_id": "1", "logging": {"enabled": true, "dir": "~/tvlogs"}}"#;
+        let cfg: TerebiConfig = serde_json::from_str(json)?;
+        assert!(cfg.logging.enabled);
+        assert!(cfg.logging.path().ends_with("tvlogs"));
         Ok(())
     }
 }

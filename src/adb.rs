@@ -1,9 +1,21 @@
 use anyhow::{Context, Result};
-use std::process::Command;
+use std::fs::{self, File};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::discovery;
+
+/// Upper bound for any single ADB round trip. A TV that drops off the network
+/// leaves `adb` blocked forever; without this the bot's single-threaded loop
+/// would stop answering Telegram as well.
+const ADB_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Poll interval while waiting for an ADB child to finish.
+const POLL_INTERVAL: Duration = Duration::from_millis(25);
+
+static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone)]
 pub struct AdbDevice {
@@ -106,12 +118,12 @@ impl AdbDevice {
         let mut cmd = vec!["-s", &target, "shell"];
         cmd.extend_from_slice(args);
 
-        let output = Command::new("adb")
-            .args(&cmd)
-            .output()
-            .with_context(|| format!("Failed to run adb shell on {target}"))?;
+        let mut command = Command::new("adb");
+        command.args(&cmd);
+        let output = run_captured(&mut command, ADB_TIMEOUT)
+            .with_context(|| format!("adb shell failed on {target}"))?;
 
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        Ok(String::from_utf8_lossy(&output).to_string())
     }
 
     pub fn exec_raw(&self, args: &[&str]) -> Result<Vec<u8>> {
@@ -120,17 +132,66 @@ impl AdbDevice {
         let mut cmd = vec!["-s", &target, "exec-out"];
         cmd.extend_from_slice(args);
 
-        let output = Command::new("adb")
-            .args(&cmd)
-            .output()
-            .with_context(|| format!("Failed to run adb exec-out on {target}"))?;
+        let mut command = Command::new("adb");
+        command.args(&cmd);
+        run_captured(&mut command, ADB_TIMEOUT)
+            .with_context(|| format!("adb exec-out failed on {target}"))
+    }
+}
 
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("adb exec-out failed: {err}");
+/// Run a command with stdout/stderr captured to temp files and a hard deadline.
+///
+/// Files are used instead of pipes so a large payload (`screencap` is several
+/// megabytes) can never block on a full pipe while the deadline is polled.
+fn run_captured(command: &mut Command, timeout: Duration) -> Result<Vec<u8>> {
+    let base = std::env::temp_dir().join(format!(
+        "terebi-adb-{}-{}",
+        std::process::id(),
+        TEMP_SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    let out_path = base.with_extension("out");
+    let err_path = base.with_extension("err");
+
+    let out_file = File::create(&out_path)
+        .with_context(|| format!("Failed to create {}", out_path.display()))?;
+    let err_file = File::create(&err_path)
+        .with_context(|| format!("Failed to create {}", err_path.display()))?;
+
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(out_file))
+        .stderr(Stdio::from(err_file));
+
+    let result = spawn_and_wait(command, timeout, &out_path, &err_path);
+    let _ = fs::remove_file(&out_path);
+    let _ = fs::remove_file(&err_path);
+    result
+}
+
+fn spawn_and_wait(
+    command: &mut Command,
+    timeout: Duration,
+    out_path: &std::path::Path,
+    err_path: &std::path::Path,
+) -> Result<Vec<u8>> {
+    let mut child = command.spawn().context("Failed to spawn adb")?;
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        if let Some(status) = child.try_wait().context("Failed to poll adb")? {
+            let stdout = fs::read(out_path).unwrap_or_default();
+            if status.success() {
+                return Ok(stdout);
+            }
+            let stderr = fs::read_to_string(err_path).unwrap_or_default();
+            anyhow::bail!("adb exited with {status}: {}", stderr.trim());
         }
-
-        Ok(output.stdout)
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            anyhow::bail!("adb command timed out after {}s", timeout.as_secs());
+        }
+        std::thread::sleep(POLL_INTERVAL);
     }
 }
 
@@ -142,5 +203,35 @@ mod tests {
     fn test_adb_target_string() {
         let dev = AdbDevice::new("192.168.1.100".to_string(), 5555);
         assert_eq!(dev.target(), "192.168.1.100:5555");
+    }
+
+    #[test]
+    fn test_run_captured_returns_stdout() -> Result<()> {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "printf hello"]);
+        assert_eq!(run_captured(&mut cmd, Duration::from_secs(5))?, b"hello");
+        Ok(())
+    }
+
+    #[test]
+    fn test_run_captured_reports_failure() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "echo boom >&2; exit 3"]);
+        let err = run_captured(&mut cmd, Duration::from_secs(5));
+        let message = err.map_or_else(|e| e.to_string(), |_| String::new());
+        assert!(message.contains("boom"), "unexpected message: {message}");
+    }
+
+    #[test]
+    fn test_run_captured_enforces_timeout() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "sleep 5"]);
+        let started = Instant::now();
+        let err = run_captured(&mut cmd, Duration::from_millis(200));
+        assert!(err.is_err());
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "timeout was not enforced"
+        );
     }
 }

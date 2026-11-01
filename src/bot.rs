@@ -4,13 +4,18 @@ use std::cell::RefCell;
 use std::time::Duration;
 
 use crate::config::TerebiConfig;
+use crate::input_log::InputLogger;
 use crate::tv::TvController;
 
 mod api;
 mod clear;
+mod logs;
 mod ui;
 
-use api::{answer_callback, fetch_updates, send_photo, send_text, CallbackQuery, Message, User};
+use api::{
+    answer_callback, fetch_updates, send_photo, send_text, set_my_commands, CallbackQuery, Message,
+    User,
+};
 use ui::{format_status_card, help_text, kill_keyboard, remote_keyboard, status_keyboard};
 
 struct BotContext<'a> {
@@ -19,6 +24,8 @@ struct BotContext<'a> {
     tv: &'a TvController,
     /// Installed third-party packages, refreshed whenever a menu opens.
     apps: RefCell<Vec<String>>,
+    /// Active logcat reader, present only while key capture is running.
+    logger: RefCell<Option<InputLogger>>,
 }
 
 pub fn run_bot(config: &TerebiConfig) -> Result<()> {
@@ -33,7 +40,24 @@ pub fn run_bot(config: &TerebiConfig) -> Result<()> {
         config,
         tv: &tv,
         apps: RefCell::new(Vec::new()),
+        logger: RefCell::new(None),
     };
+
+    // Keep Telegram's "/" menu in sync with the commands the bot actually serves.
+    if let Err(e) = set_my_commands(&client, &config.bot_token, &ui::command_menu()) {
+        println!("  ⚠️ Failed to register command menu: {e}");
+    }
+
+    if config.logging.enabled {
+        let dir = config.logging.path();
+        match InputLogger::start(&tv.adb, &dir) {
+            Ok(logger) => {
+                *ctx.logger.borrow_mut() = Some(logger);
+                println!("  🗒 Key capture active → {}", dir.display());
+            }
+            Err(e) => println!("  ⚠️ Key capture failed to start: {e}"),
+        }
+    }
 
     println!(
         "  ⚡ Terebi Telegram Bot started (Authorized chat: {})...",
@@ -83,6 +107,12 @@ fn handle_message(ctx: &BotContext, msg: Message) {
         handle_kill_command(ctx, msg.chat.id, trimmed);
     } else if trimmed.starts_with("/clear") {
         clear::handle_clear_command(ctx, msg.chat.id, trimmed);
+    } else if trimmed == "/logs" {
+        logs::send_log_tail(ctx, msg.chat.id);
+    } else if trimmed.starts_with("/log") {
+        logs::handle_log_toggle(ctx, msg.chat.id, trimmed);
+    } else if trimmed == "/text" {
+        logs::send_screen_text(ctx, msg.chat.id);
     } else if trimmed == "/remote" {
         send_remote_menu(ctx, msg.chat.id);
     } else if let Some(app) = trimmed.strip_prefix("/open ") {

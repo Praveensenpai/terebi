@@ -64,7 +64,9 @@
 | Feature | Description |
 |---|---|
 | **🛑 App Murderer & Force-Stop** | Instantly kill runaway apps (`am force-stop`) with 1-tap inline buttons or `/kill [app]`, returning the TV to Home launcher. |
-| **🧹 App Cache & Data Purge** | Completely reset stuck or corrupt apps (`pm clear`) with 1-tap inline buttons, `/clear [app]`, or CLI to restore clean state. |
+| **🧹 App Data Erase** | Erase all data for an app the way a fresh install starts (`pm clear`): account, settings and cache. Paginated app picker with a confirmation step. |
+| **⌨️ Remote Key Logger** | Capture every remote key press from the TV's `WindowManager` channel into daily `YYYY-MM-DD.log` files with millisecond timestamps. Read them with `/logs` or `terebi logs`. |
+| **🔎 On-Screen Text** | Dump the accessibility tree on demand to read visible labels via `/text` or `terebi text`. Apps that draw text without exposing accessibility nodes will return nothing. |
 | **🎬 Live Playback Inspector** | Query active foreground apps, parsed media titles, artists/channels, playback state (▶️ / ⏸), and screen power. |
 | **📸 Lossless Screen Capture** | Streams raw TV screenshots via `adb exec-out screencap -p` directly as full-resolution photos to your Telegram chat. |
 | **🎮 Virtual D-Pad Remote** | Full interactive inline keyboard with D-pad (`⬆️`, `⬇️`, `⬅️`, `➡️`, `OK`), Back, Home, Play/Pause, and Volume buttons. |
@@ -128,12 +130,15 @@ Send these commands directly to your private bot:
 
 | Command | Description | Inline Actions |
 |---|---|---|
-| `/status`, `/now` | View current TV app, media title, playing state, and display status | `[ 🛑 Kill App ]`, `[ 🧹 Clear Data ]`, `[ 📸 Screen ]`, `[ 🎮 Remote ]`, `[ 🔄 Refresh ]` |
+| `/status`, `/now` | View current TV app, media title, playing state, and display status | `[ 🛑 Kill App ]`, `[ 🧹 Erase All Data ]`, `[ 📸 Screen ]`, `[ 🎮 Remote ]`, `[ 🔄 Refresh ]` |
 | `/screen`, `/screenshot` | Take a live screenshot of the TV screen and send as a photo | — |
 | `/kill` | Open the interactive App Murderer menu | Select from Hotstar, YouTube, Netflix, Stremio, SmartTube, etc. |
 | `/kill [app]` | Force stop specific app (e.g. `/kill youtube`, `/kill netflix`, `/kill yt`) | Drops to home screen after termination |
 | `/clear` | Browse every installed app, most-used first | Paginated list with a confirm step before any wipe |
-| `/clear [app]` | Wipe cache & data for app (e.g. `/clear hotstar`, `/clear youtube`) | Resets app data and returns to home screen |
+| `/clear [app]` | Erase ALL data for an app like a fresh install: account, settings, cache (e.g. `/clear hotstar`) | Signs the app out, resets its settings, then returns to home |
+| `/logs` | Show the last 40 captured remote key presses | — |
+| `/log on` \| `/log off` | Start, stop, or check remote key capture | — |
+| `/text` | Read the text currently visible on screen (best effort) | — |
 | `/remote` | Render virtual D-pad remote control keypad | Directional arrows, OK, Home, Back, Volume +/-, Pause, Mute |
 | `/open [app]` | Launch TV application (e.g. `/open hotstar`, `/open youtube`, `/open stremio`) | — |
 | `/help` | Display quick commands guide | — |
@@ -160,8 +165,14 @@ terebi screen -o tv_preview.png
 # Force stop an app via CLI
 terebi kill youtube
 
-# Wipe app data and cache via CLI (pm clear)
+# Erase all app data like a fresh install (pm clear)
 terebi clear hotstar
+
+# Show the newest remote-key log
+terebi logs --lines 40
+
+# Read the text currently visible on screen
+terebi text
 
 # List installed third-party apps, most recently used first
 terebi apps
