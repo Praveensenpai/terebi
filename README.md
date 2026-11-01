@@ -86,6 +86,8 @@ Install `terebi` in seconds with automated binary extraction and systemd service
 curl -fsSL https://raw.githubusercontent.com/Praveensenpai/terebi/main/install.sh | bash
 ```
 
+Prebuilt tarballs ship for `x86_64` and `aarch64` Linux with matching `SHA256SUMS.txt`. On any other target the installer falls back to a local `cargo build --release` when Rust is available.
+
 <br>
 
 ### 🛠️ Manual Build from Source
