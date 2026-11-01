@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 
 mod adb;
+mod apps;
 mod bot;
 mod config;
 mod discovery;
@@ -46,6 +47,8 @@ enum Commands {
         /// App package or friendly name (e.g., hotstar, youtube, netflix, or package id)
         app: String,
     },
+    /// List installed third-party apps, most recently used first
+    Apps,
     /// Launch an app on TV
     Open {
         /// App package or friendly name (e.g., youtube, netflix)
@@ -154,6 +157,20 @@ fn handle_remote(tv: &TvController, key: &str) -> Result<()> {
     Ok(())
 }
 
+fn handle_apps(tv: &TvController) -> Result<()> {
+    let packages = tv.list_apps()?;
+    println!("  📦 Installed third-party apps ({}):", packages.len());
+    for (index, pkg) in packages.iter().enumerate() {
+        println!(
+            "  {}. {} {}",
+            (index + 1).to_string().dimmed(),
+            apps::display_name(pkg).bold(),
+            format!("({pkg})").dimmed()
+        );
+    }
+    Ok(())
+}
+
 fn run_command(cmd: Commands, config: Option<TerebiConfig>) -> Result<()> {
     match cmd {
         Commands::Setup => {
@@ -164,6 +181,12 @@ fn run_command(cmd: Commands, config: Option<TerebiConfig>) -> Result<()> {
             let cfg = config.unwrap_or(TerebiConfig::load()?);
             print_banner();
             bot::run_bot(&cfg)
+        }
+        Commands::Apps => {
+            let cfg = config.unwrap_or(TerebiConfig::load()?);
+            let tv = TvController::new(cfg.tv_ip, cfg.tv_port);
+            print_banner();
+            handle_apps(&tv)
         }
         Commands::Status => {
             let cfg = config.unwrap_or(TerebiConfig::load()?);

@@ -106,6 +106,17 @@ impl TvController {
         Ok((pkg, app_label))
     }
 
+    pub fn list_apps(&self) -> Result<Vec<String>> {
+        let output = self.adb.shell(&["pm", "list", "packages", "-3"])?;
+        let apps = crate::apps::parse_package_list(&output);
+        let usage = self
+            .adb
+            .shell(&["dumpsys", "usagestats"])
+            .unwrap_or_default();
+        let ranks = crate::apps::parse_usage_ranking(&usage);
+        Ok(crate::apps::sort_by_usage(apps, &ranks))
+    }
+
     pub fn take_screenshot(&self) -> Result<Vec<u8>> {
         self.adb.exec_raw(&["screencap", "-p"])
     }

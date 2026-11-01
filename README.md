@@ -132,7 +132,7 @@ Send these commands directly to your private bot:
 | `/screen`, `/screenshot` | Take a live screenshot of the TV screen and send as a photo | — |
 | `/kill` | Open the interactive App Murderer menu | Select from Hotstar, YouTube, Netflix, Stremio, SmartTube, etc. |
 | `/kill [app]` | Force stop specific app (e.g. `/kill youtube`, `/kill netflix`, `/kill yt`) | Drops to home screen after termination |
-| `/clear` | Open the interactive Clear App Data menu | Select from Hotstar, YouTube, Netflix, Stremio, etc. |
+| `/clear` | Browse every installed app, most-used first | Paginated list with a confirm step before any wipe |
 | `/clear [app]` | Wipe cache & data for app (e.g. `/clear hotstar`, `/clear youtube`) | Resets app data and returns to home screen |
 | `/remote` | Render virtual D-pad remote control keypad | Directional arrows, OK, Home, Back, Volume +/-, Pause, Mute |
 | `/open [app]` | Launch TV application (e.g. `/open hotstar`, `/open youtube`, `/open stremio`) | — |
@@ -162,6 +162,9 @@ terebi kill youtube
 
 # Wipe app data and cache via CLI (pm clear)
 terebi clear hotstar
+
+# List installed third-party apps, most recently used first
+terebi apps
 
 # Launch an app
 terebi open hotstar

@@ -55,22 +55,60 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn send_photo (client : & Client , token : & str , chat_id : i64 , caption : & str , image_bytes : Vec < u8 > ,) -> Result < () >
   ```
 
-### `src/bot/ui.rs` (Role: tui, Lines: 171)
+### `src/apps.rs` (Role: domain, Lines: 215)
+- **Responsibility**: Installed-package listing, usage ranking, pagination helpers
+- **Imports**: use std :: cmp :: Ordering , use std :: collections :: HashMap , use crate :: media :: get_app_display
+- **Constants**: `PAGE_SIZE: usize = 10`
+- **Types & Enums**:
+  ```rust
+  pub struct UsageRank { pub last_used: String, pub launches: u64 }
+  ```
+- **Public Functions & Signatures**:
+  ```rust
+  fn parse_package_list (output : & str) -> Vec < String >
+  fn page_count (total : usize , per_page : usize) -> usize
+  fn page_slice (items : & [String] , page : usize) -> (usize , & [String])
+  fn display_name (package : & str) -> String
+  fn parse_usage_ranking (dump : & str) -> HashMap < String , UsageRank >
+  fn sort_by_usage (apps : Vec < String > , usage : & HashMap < String , UsageRank >) -> Vec < String >
+  ```
+
+### `src/bot/clear.rs` (Role: domain, Lines: 195)
+- **Responsibility**: App-data wipe flows: installed-app menu, confirmation, execution
+- **Imports**: use anyhow :: Result , use crate :: apps :: display_name , use crate :: bot :: api :: { answer_callback , send_text , CallbackQuery } , use crate :: bot :: ui :: { clear_apps_keyboard , confirm_clear_keyboard }
+- **Public Functions & Signatures**:
+  ```rust
+  fn refresh_app_list (ctx : & BotContext) -> Result < usize >
+  fn send_clear_menu (ctx : & BotContext , chat_id : i64)
+  fn handle_clear_command (ctx : & BotContext , chat_id : i64 , input : & str)
+  fn handle_clear_list (ctx : & BotContext , cb : & CallbackQuery , page : usize)
+  fn handle_clear_refresh (ctx : & BotContext , cb : & CallbackQuery)
+  fn handle_clear_ask (ctx : & BotContext , cb : & CallbackQuery , target : & str)
+  fn handle_clear_execute (ctx : & BotContext , cb : & CallbackQuery , target : & str)
+  ```
+- **Callback Protocol**: `clearlist:<page>`, `clearrefresh`, `clearask:<index|package>`, `clear:<package>` (confirm always encodes the package, never an index)
+
+### `src/bot/ui.rs` (Role: tui, Lines: 247)
 - **Responsibility**: Core tui logic in src/bot/ui.rs
-- **Imports**: use serde_json :: json , use crate :: session :: format_duration , use crate :: tv :: TvStatus 
+- **Imports**: use serde_json :: json , use crate :: apps :: { display_name , page_count , page_slice } , use crate :: session :: format_duration , use crate :: tv :: TvStatus
 - **Public Functions & Signatures**:
   ```rust
   fn help_text (friendly_name : & str) -> String
   fn format_status_card (friendly_name : & str , status : & TvStatus) -> String
   fn status_keyboard (package : & str , app_name : & str) -> serde_json :: Value
   fn kill_keyboard () -> serde_json :: Value
-  fn clear_keyboard () -> serde_json :: Value
+  fn clear_apps_keyboard (apps : & [String] , page : usize) -> serde_json :: Value
+  fn confirm_clear_keyboard (target : & str) -> serde_json :: Value
   fn remote_keyboard () -> serde_json :: Value
   ```
 
-### `src/bot.rs` (Role: general, Lines: 355)
+### `src/bot.rs` (Role: general, Lines: 300)
 - **Responsibility**: Core general logic in src/bot.rs
-- **Imports**: use anyhow :: { Context , Result } , use reqwest :: blocking :: Client , use std :: time :: Duration , use crate :: config :: TerebiConfig , use crate :: tv :: TvController , use api :: { answer_callback , fetch_updates , send_photo , send_text , CallbackQuery , Message , User } , use ui :: { clear_keyboard , format_status_card , help_text , kill_keyboard , remote_keyboard , status_keyboard , } 
+- **Imports**: use anyhow :: { Context , Result } , use reqwest :: blocking :: Client , use std :: cell :: RefCell , use std :: time :: Duration , use crate :: config :: TerebiConfig , use crate :: tv :: TvController , use api :: { answer_callback , fetch_updates , send_photo , send_text , CallbackQuery , Message , User } , use ui :: { format_status_card , help_text , kill_keyboard , remote_keyboard , status_keyboard , } 
+- **Types & Enums**:
+  ```rust
+  struct BotContext < 'a > { client : & 'a Client , config : & 'a TerebiConfig , tv : & 'a TvController , apps : RefCell < Vec < String > > }
+  ```
 - **Public Functions & Signatures**:
   ```rust
   fn run_bot (config : & TerebiConfig) -> Result < () >
@@ -102,9 +140,10 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn discover_tv_ip (port : u16) -> Option < String >
   ```
 
-### `src/main.rs` (Role: general, Lines: 245)
-- **Responsibility**: Core general logic in src/main.rs
-- **Imports**: use anyhow :: Result , use clap :: { Parser , Subcommand } , use colored :: Colorize , use config :: TerebiConfig , use tv :: TvController 
+### `src/main.rs` (Role: general, Lines: 268)
+- **Responsibility**: CLI entrypoint, subcommand dispatch, colored terminal output
+- **Imports**: use anyhow :: Result , use clap :: { Parser , Subcommand } , use colored :: Colorize , use config :: TerebiConfig , use tv :: TvController
+- **Subcommands**: `daemon`, `status`, `screen`, `kill`, `clear`, `apps`, `open`, `remote`, `connect`, `setup` 
 
 ### `src/media.rs` (Role: general, Lines: 229)
 - **Responsibility**: Core general logic in src/media.rs
@@ -131,7 +170,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn format_duration (ms : u64) -> String
   ```
 
-### `src/tv.rs` (Role: general, Lines: 159)
+### `src/tv.rs` (Role: general, Lines: 170)
 - **Responsibility**: Core general logic in src/tv.rs
 - **Imports**: use anyhow :: Result , use crate :: adb :: AdbDevice , use crate :: media :: { self , get_app_display } , use crate :: session :: { self , MediaMetadata } 
 - **Types & Enums**:
@@ -145,6 +184,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn get_status (& self) -> Result < TvStatus >
   fn force_stop (& self , query : & str) -> Result < (String , String) >
   fn clear_app_data (& self , query : & str) -> Result < (String , String) >
+  fn list_apps (& self) -> Result < Vec < String > >
   fn take_screenshot (& self) -> Result < Vec < u8 > >
   fn send_key (& self , keycode : & str) -> Result < () >
   fn launch_app (& self , query : & str) -> Result < String >

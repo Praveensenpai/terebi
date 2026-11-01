@@ -1,22 +1,24 @@
 use anyhow::{Context, Result};
 use reqwest::blocking::Client;
+use std::cell::RefCell;
 use std::time::Duration;
 
 use crate::config::TerebiConfig;
 use crate::tv::TvController;
 
 mod api;
+mod clear;
 mod ui;
 
 use api::{answer_callback, fetch_updates, send_photo, send_text, CallbackQuery, Message, User};
-use ui::{
-    clear_keyboard, format_status_card, help_text, kill_keyboard, remote_keyboard, status_keyboard,
-};
+use ui::{format_status_card, help_text, kill_keyboard, remote_keyboard, status_keyboard};
 
 struct BotContext<'a> {
     client: &'a Client,
     config: &'a TerebiConfig,
     tv: &'a TvController,
+    /// Installed third-party packages, refreshed whenever a menu opens.
+    apps: RefCell<Vec<String>>,
 }
 
 pub fn run_bot(config: &TerebiConfig) -> Result<()> {
@@ -30,6 +32,7 @@ pub fn run_bot(config: &TerebiConfig) -> Result<()> {
         client: &client,
         config,
         tv: &tv,
+        apps: RefCell::new(Vec::new()),
     };
 
     println!(
@@ -79,7 +82,7 @@ fn handle_message(ctx: &BotContext, msg: Message) {
     } else if trimmed.starts_with("/kill") || trimmed.starts_with("/stop") {
         handle_kill_command(ctx, msg.chat.id, trimmed);
     } else if trimmed.starts_with("/clear") {
-        handle_clear_command(ctx, msg.chat.id, trimmed);
+        clear::handle_clear_command(ctx, msg.chat.id, trimmed);
     } else if trimmed == "/remote" {
         send_remote_menu(ctx, msg.chat.id);
     } else if let Some(app) = trimmed.strip_prefix("/open ") {
@@ -192,44 +195,6 @@ fn send_kill_menu(ctx: &BotContext, chat_id: i64) {
     );
 }
 
-fn handle_clear_command(ctx: &BotContext, chat_id: i64, input: &str) {
-    let parts: Vec<&str> = input.split_whitespace().collect();
-    if parts.len() > 1 {
-        let target = parts[1];
-        match ctx.tv.clear_app_data(target) {
-            Ok((pkg, name)) => {
-                let msg = format!(
-                    "🧹 <b>Data Cleared:</b> {name}\n📦 <code>{pkg}</code>\n🏠 Returned to Home."
-                );
-                let _ = send_text(ctx.client, &ctx.config.bot_token, chat_id, &msg, None);
-            }
-            Err(e) => {
-                let _ = send_text(
-                    ctx.client,
-                    &ctx.config.bot_token,
-                    chat_id,
-                    &format!("⚠️ Failed to clear data for {target}: {e}"),
-                    None,
-                );
-            }
-        }
-    } else {
-        send_clear_menu(ctx, chat_id);
-    }
-}
-
-fn send_clear_menu(ctx: &BotContext, chat_id: i64) {
-    let text = "🧹 <b>Clear App Data — Select App to Reset:</b>";
-    let keyboard = clear_keyboard();
-    let _ = send_text(
-        ctx.client,
-        &ctx.config.bot_token,
-        chat_id,
-        text,
-        Some(keyboard),
-    );
-}
-
 fn send_remote_menu(ctx: &BotContext, chat_id: i64) {
     let text = "🎮 <b>Terebi Virtual Remote Control:</b>";
     let keyboard = remote_keyboard();
@@ -273,8 +238,14 @@ fn handle_callback(ctx: &BotContext, cb: CallbackQuery) {
 
     if data.starts_with("kill:") {
         handle_kill_callback(ctx, &cb, data.trim_start_matches("kill:"));
-    } else if data.starts_with("clear:") {
-        handle_clear_callback(ctx, &cb, data.trim_start_matches("clear:"));
+    } else if data == "clearrefresh" {
+        clear::handle_clear_refresh(ctx, &cb);
+    } else if let Some(page) = data.strip_prefix("clearlist:") {
+        clear::handle_clear_list(ctx, &cb, page.parse().unwrap_or(0));
+    } else if let Some(target) = data.strip_prefix("clearask:") {
+        clear::handle_clear_ask(ctx, &cb, target);
+    } else if let Some(target) = data.strip_prefix("clear:") {
+        clear::handle_clear_execute(ctx, &cb, target);
     } else if data.starts_with("key:") {
         let key = data.trim_start_matches("key:");
         let _ = ctx.tv.send_key(key);
@@ -322,32 +293,6 @@ fn handle_kill_callback(ctx: &BotContext, cb: &CallbackQuery, target: &str) {
         if let Some(ref msg) = cb.message {
             let alert = format!(
                 "🛑 <b>App Terminated:</b> {name}\n📦 <code>{pkg}</code>\n🏠 Returned to Home."
-            );
-            let _ = send_text(ctx.client, &ctx.config.bot_token, msg.chat.id, &alert, None);
-        }
-    }
-}
-
-fn handle_clear_callback(ctx: &BotContext, cb: &CallbackQuery, target: &str) {
-    let clear_target = if target == "current" {
-        ctx.tv.get_status().map_or_else(
-            |_| "com.google.android.youtube.tv".to_string(),
-            |s| s.package,
-        )
-    } else {
-        target.to_string()
-    };
-
-    if let Ok((pkg, name)) = ctx.tv.clear_app_data(&clear_target) {
-        let _ = answer_callback(
-            ctx.client,
-            &ctx.config.bot_token,
-            &cb.id,
-            &format!("Cleared {name}!"),
-        );
-        if let Some(ref msg) = cb.message {
-            let alert = format!(
-                "🧹 <b>App Data Cleared:</b> {name}\n📦 <code>{pkg}</code>\n🏠 Returned to Home."
             );
             let _ = send_text(ctx.client, &ctx.config.bot_token, msg.chat.id, &alert, None);
         }
