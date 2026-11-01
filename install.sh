@@ -101,7 +101,7 @@ configure_and_connect() {
     mkdir -p "${CONFIG_DIR}"
     if [[ ! -f "${CONFIG_DIR}/config.json" ]]; then
         log_info "No configuration found. Starting interactive setup..."
-        if [[ -e /dev/tty ]]; then
+        if (exec </dev/tty) 2>/dev/null; then
             "${BIN_DIR}/terebi" setup </dev/tty >/dev/tty 2>&1 || true
         else
             cat << 'EOF' > "${CONFIG_DIR}/config.json.example"
@@ -156,6 +156,12 @@ EOF
 
     systemctl --user daemon-reload
     log_ok "Installed systemd user service at ${SYSTEMD_USER_DIR}/terebi.service"
+
+    if [[ ! -f "${CONFIG_DIR}/config.json" ]]; then
+        log_warn "No config.json yet. Skipping service start."
+        log_info "Run '${BIN_DIR}/terebi setup', then: systemctl --user enable --now terebi.service"
+        return 0
+    fi
 
     log_info "Starting terebi background service..."
     systemctl --user enable --now terebi.service || true
