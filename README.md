@@ -142,6 +142,8 @@ Send these commands directly to your private bot:
 | `/log on` \| `/log off` | Start, stop, or check remote key capture | — |
 | `/text` | Read the text currently visible on screen (best effort) | — |
 | `/remote` | Render virtual D-pad remote control keypad | Directional arrows, OK, Home, Back, Volume +/-, Pause, Mute |
+| `/reboot` | Reboot the TV over ADB; requests a one-tap confirmation | `[ 🔄 Reboot Now ]`, `[ ❌ Cancel ]` |
+| `/poweroff` | Power the TV off; falls back to the power key (sleep) if the firmware refuses | `[ 🌙 Power Off Now ]`, `[ ❌ Cancel ]` |
 | `/open [app]` | Launch TV application (e.g. `/open hotstar`, `/open youtube`, `/open stremio`) | — |
 | `/help` | Display quick commands guide | — |
 
@@ -184,6 +186,12 @@ terebi open hotstar
 
 # Send a remote keypress (up, down, left, right, ok, back, home, pause, volup, voldown, mute)
 terebi remote home
+
+# Reboot the TV
+terebi reboot
+
+# Power the TV off (falls back to sleep if the firmware refuses)
+terebi poweroff
 
 # Test connection to TV ADB
 terebi connect

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use reqwest::blocking::Client;
 use std::cell::RefCell;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::config::TerebiConfig;
 use crate::input_log::InputLogger;
@@ -9,14 +9,16 @@ use crate::tv::TvController;
 
 mod api;
 mod clear;
+mod commands;
 mod logs;
+mod power;
 mod ui;
 
 use api::{
     answer_callback, escape_html, fetch_updates, send_photo, send_text, set_my_commands,
     CallbackQuery, Message, User,
 };
-use ui::{format_status_card, help_text, kill_keyboard, remote_keyboard, status_keyboard};
+use ui::{format_status_card, kill_keyboard, remote_keyboard, status_keyboard, PowerAction};
 
 struct BotContext<'a> {
     client: &'a Client,
@@ -26,6 +28,10 @@ struct BotContext<'a> {
     apps: RefCell<Vec<String>>,
     /// Active logcat reader, present only while key capture is running.
     logger: RefCell<Option<InputLogger>>,
+    /// Power action awaiting confirmation, if any.
+    pending_power: RefCell<Option<power::Pending>>,
+    /// When the last power action actually ran.
+    power_guard: RefCell<Option<Instant>>,
 }
 
 pub fn run_bot(config: &TerebiConfig) -> Result<()> {
@@ -41,10 +47,12 @@ pub fn run_bot(config: &TerebiConfig) -> Result<()> {
         tv: &tv,
         apps: RefCell::new(Vec::new()),
         logger: RefCell::new(None),
+        pending_power: RefCell::new(None),
+        power_guard: RefCell::new(None),
     };
 
     // Keep Telegram's "/" menu in sync with the commands the bot actually serves.
-    if let Err(e) = set_my_commands(&client, &config.bot_token, &ui::command_menu()) {
+    if let Err(e) = set_my_commands(&client, &config.bot_token, &commands::command_menu()) {
         println!("  ⚠️ Failed to register command menu: {e}");
     }
 
@@ -74,7 +82,7 @@ pub fn run_bot(config: &TerebiConfig) -> Result<()> {
         for u in updates {
             offset = u.id + 1;
             if let Some(msg) = u.message {
-                handle_message(&ctx, msg);
+                handle_message(&ctx, &msg);
             } else if let Some(cb) = u.callback_query {
                 handle_callback(&ctx, cb);
             }
@@ -89,12 +97,14 @@ fn is_authorized(user_id: Option<&User>, chat_id: &str) -> bool {
     user_id.is_some_and(|u| u.id == auth_id)
 }
 
-fn handle_message(ctx: &BotContext, msg: Message) {
+fn handle_message(ctx: &BotContext, msg: &Message) {
     if !is_authorized(msg.from.as_ref(), &ctx.config.chat_id) {
         return;
     }
 
-    let Some(text) = msg.text else { return };
+    let Some(text) = msg.text.as_deref() else {
+        return;
+    };
     let trimmed = text.trim();
 
     if trimmed == "/start" || trimmed == "/help" {
@@ -113,6 +123,8 @@ fn handle_message(ctx: &BotContext, msg: Message) {
         logs::handle_log_toggle(ctx, msg.chat.id, trimmed);
     } else if trimmed == "/text" {
         logs::send_screen_text(ctx, msg.chat.id);
+    } else if let Some(action) = PowerAction::from_command(trimmed) {
+        power::handle_power_command(ctx, msg, action);
     } else if trimmed == "/remote" {
         send_remote_menu(ctx, msg.chat.id);
     } else if let Some(app) = trimmed.strip_prefix("/open ") {
@@ -121,7 +133,7 @@ fn handle_message(ctx: &BotContext, msg: Message) {
 }
 
 fn send_help(ctx: &BotContext, chat_id: i64) {
-    let text = help_text(&ctx.config.friendly_name);
+    let text = commands::help_text(&ctx.config.friendly_name);
     let _ = send_text(ctx.client, &ctx.config.bot_token, chat_id, &text, None);
 }
 
@@ -285,6 +297,8 @@ fn handle_callback(ctx: &BotContext, cb: CallbackQuery) {
         clear::handle_clear_ask(ctx, &cb, target);
     } else if let Some(target) = data.strip_prefix("clear:") {
         clear::handle_clear_execute(ctx, &cb, target);
+    } else if data.starts_with("power:") {
+        power::handle_power_callback(ctx, &cb, data);
     } else if data.starts_with("key:") {
         let key = data.trim_start_matches("key:");
         let _ = ctx.tv.send_key(key);

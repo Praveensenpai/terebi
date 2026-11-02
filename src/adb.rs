@@ -126,6 +126,31 @@ impl AdbDevice {
         Ok(String::from_utf8_lossy(&output).to_string())
     }
 
+    /// Ask the device to reboot; `power_off` shuts it down instead.
+    ///
+    /// ADB normally closes the transport while the device restarts, so a
+    /// disconnect reported after the request is treated as success.
+    pub fn reboot(&self, power_off: bool) -> Result<()> {
+        self.ensure_connected()?;
+        let target = self.target();
+        let mut args = vec!["-s", target.as_str(), "reboot"];
+        if power_off {
+            args.push("-p");
+        }
+
+        let mut command = Command::new("adb");
+        command.args(&args);
+        run_captured(&mut command, ADB_TIMEOUT)
+            .map(|_| ())
+            .or_else(|err| {
+                if is_transport_drop(&err) {
+                    Ok(())
+                } else {
+                    Err(err)
+                }
+            })
+    }
+
     pub fn exec_raw(&self, args: &[&str]) -> Result<Vec<u8>> {
         self.ensure_connected()?;
         let target = self.target();
@@ -137,6 +162,15 @@ impl AdbDevice {
         run_captured(&mut command, ADB_TIMEOUT)
             .with_context(|| format!("adb exec-out failed on {target}"))
     }
+}
+
+/// True when an ADB error means the device hung up mid-command, which is the
+/// expected outcome of a reboot request rather than a failure.
+fn is_transport_drop(err: &anyhow::Error) -> bool {
+    let message = err.to_string().to_lowercase();
+    ["closed", "offline", "reset", "broken pipe"]
+        .iter()
+        .any(|needle| message.contains(needle))
 }
 
 /// Run a command with stdout/stderr captured to temp files and a hard deadline.
@@ -203,6 +237,19 @@ mod tests {
     fn test_adb_target_string() {
         let dev = AdbDevice::new("192.168.1.100".to_string(), 5555);
         assert_eq!(dev.target(), "192.168.1.100:5555");
+    }
+
+    #[test]
+    fn test_is_transport_drop_matches_disconnects() {
+        for message in [
+            "adb exited with exit status: 1: error: closed",
+            "adb exited with exit status: 1: error: device offline",
+            "adb exited with exit status: 1: Connection reset by peer",
+        ] {
+            assert!(is_transport_drop(&anyhow::anyhow!(message.to_string())));
+        }
+        let genuine = anyhow::anyhow!("adb exited with exit status: 1: error: no devices found");
+        assert!(!is_transport_drop(&genuine));
     }
 
     #[test]

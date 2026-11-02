@@ -35,6 +35,7 @@ pub struct CallbackQuery {
 #[derive(Debug, Deserialize)]
 pub struct MessageSummary {
     pub chat: Chat,
+    pub message_id: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +72,35 @@ pub fn send_text(
     let url = format!("https://api.telegram.org/bot{token}/sendMessage");
     let mut payload = json!({
         "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML"
+    });
+
+    if let Some(markup) = reply_markup {
+        payload["reply_markup"] = markup;
+    }
+
+    client
+        .post(&url)
+        .json(&payload)
+        .send()?
+        .error_for_status()?;
+    Ok(())
+}
+
+/// Rewrite an existing bot message, optionally replacing its keyboard.
+pub fn edit_message_text(
+    client: &Client,
+    token: &str,
+    chat_id: i64,
+    message_id: i64,
+    text: &str,
+    reply_markup: Option<serde_json::Value>,
+) -> Result<()> {
+    let url = format!("https://api.telegram.org/bot{token}/editMessageText");
+    let mut payload = json!({
+        "chat_id": chat_id,
+        "message_id": message_id,
         "text": text,
         "parse_mode": "HTML"
     });

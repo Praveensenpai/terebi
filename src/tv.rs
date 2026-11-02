@@ -13,6 +13,17 @@ pub struct TvStatus {
     pub is_screen_on: bool,
 }
 
+/// What a power request actually did to the TV.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PowerOutcome {
+    /// `reboot` was accepted.
+    Rebooted,
+    /// `reboot -p` was accepted.
+    PoweredOff,
+    /// Shutdown was refused, so the power key (sleep) was sent instead.
+    Sleep,
+}
+
 #[derive(Debug, Clone)]
 pub struct TvController {
     pub adb: AdbDevice,
@@ -134,6 +145,23 @@ impl TvController {
         let xml = self.adb.shell(&["cat", REMOTE])?;
         let _ = self.adb.shell(&["rm", "-f", REMOTE]);
         Ok(parse_ui_texts(&xml))
+    }
+
+    /// Reboot the TV. ADB normally drops before the command's exit is read, so
+    /// the transport error that follows a reboot request counts as success.
+    pub fn reboot(&self) -> Result<PowerOutcome> {
+        self.adb.reboot(false)?;
+        Ok(PowerOutcome::Rebooted)
+    }
+
+    /// Shut the TV down, falling back to the power key (sleep) when the
+    /// firmware refuses an unprivileged `reboot -p`.
+    pub fn power_off(&self) -> Result<PowerOutcome> {
+        if self.adb.reboot(true).is_ok() {
+            return Ok(PowerOutcome::PoweredOff);
+        }
+        self.adb.shell(&["input", "keyevent", "KEYCODE_POWER"])?;
+        Ok(PowerOutcome::Sleep)
     }
 
     pub fn send_key(&self, keycode: &str) -> Result<()> {

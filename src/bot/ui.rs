@@ -4,129 +4,6 @@ use crate::apps::{display_name, page_count, page_slice};
 use crate::session::format_duration;
 use crate::tv::TvStatus;
 
-/// One bot command, used for both `/help` and Telegram's `/` menu so the two
-/// can never describe the same command differently.
-struct CommandSpec {
-    /// Command name without the leading slash.
-    name: &'static str,
-    /// Argument hint rendered after the name, e.g. `[app]`.
-    args: &'static str,
-    /// Single-line description of what the command actually does.
-    description: &'static str,
-    /// Icon shown in the `/help` card only.
-    icon: &'static str,
-    /// Whether the command appears in Telegram's `/` menu.
-    in_menu: bool,
-}
-
-/// Shorthand for a command that also appears in Telegram's `/` menu.
-const fn cmd(
-    name: &'static str,
-    args: &'static str,
-    description: &'static str,
-    icon: &'static str,
-) -> CommandSpec {
-    CommandSpec {
-        name,
-        args,
-        description,
-        icon,
-        in_menu: true,
-    }
-}
-
-const COMMANDS: &[CommandSpec] = &[
-    cmd(
-        "status",
-        "",
-        "Foreground app, playback state and screen power",
-        "🎬",
-    ),
-    cmd(
-        "screen",
-        "",
-        "Capture the TV screen and send it as a photo",
-        "📸",
-    ),
-    cmd(
-        "kill",
-        " [app]",
-        "Force-stop an app and return Home; no arg opens a picker",
-        "🛑",
-    ),
-    cmd(
-        "clear",
-        " [app]",
-        "Erase ALL app data like a fresh install; confirms first",
-        "🧹",
-    ),
-    cmd("open", " [app]", "Launch an app on the TV", "🚀"),
-    cmd(
-        "remote",
-        "",
-        "Virtual D-pad, volume and media buttons",
-        "🎮",
-    ),
-    cmd("logs", "", "Show the last 40 remote key presses", "🗒"),
-    cmd(
-        "log",
-        " [on|off]",
-        "Start, stop or check remote key capture",
-        "⏺",
-    ),
-    cmd(
-        "text",
-        "",
-        "Read the text currently visible on screen",
-        "🔎",
-    ),
-    cmd("help", "", "Show this command guide", "❓"),
-    CommandSpec {
-        name: "start",
-        args: "",
-        description: "Show this command guide",
-        icon: "❓",
-        in_menu: false,
-    },
-];
-
-#[must_use]
-pub fn help_text(friendly_name: &str) -> String {
-    use std::fmt::Write as _;
-
-    let mut body = String::new();
-    for spec in COMMANDS.iter().filter(|spec| spec.name != "start") {
-        let _ = writeln!(
-            body,
-            "{} <b>/{}{}</b> — {}",
-            spec.icon, spec.name, spec.args, spec.description
-        );
-    }
-    format!(
-        "📺 <b>TEREBI • {friendly_name}</b>\n\
-        ━━━━━━━━━━━━━━━━━━━━━━━\n\
-        ⚡ <b>Smart TV Telegram Control Hub</b>\n\n\
-        {body}\
-        ━━━━━━━━━━━━━━━━━━━━━━━"
-    )
-}
-
-/// Telegram `setMyCommands` payload, derived from [`COMMANDS`].
-#[must_use]
-pub fn command_menu() -> serde_json::Value {
-    let entries: Vec<serde_json::Value> = COMMANDS
-        .iter()
-        .filter(|spec| spec.in_menu)
-        .map(|spec| {
-            json!({
-                "command": spec.name,
-                "description": spec.description,
-            })
-        })
-        .collect();
-    json!(entries)
-}
-
 #[must_use]
 pub fn format_status_card(friendly_name: &str, status: &TvStatus) -> String {
     let state_icon = if status.media.is_playing {
@@ -278,6 +155,77 @@ pub fn confirm_clear_keyboard(target: &str) -> serde_json::Value {
     })
 }
 
+/// A power action the bot can request from the TV.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PowerAction {
+    /// Restart Android on the TV.
+    Reboot,
+    /// Shut the TV down completely.
+    PowerOff,
+}
+
+impl PowerAction {
+    /// Parse a command message such as `/reboot` or `/poweroff`.
+    #[must_use]
+    pub fn from_command(command: &str) -> Option<Self> {
+        match command {
+            "/reboot" | "/restart" => Some(Self::Reboot),
+            "/poweroff" | "/shutdown" => Some(Self::PowerOff),
+            _ => None,
+        }
+    }
+
+    /// Callback payload for this action's confirm button.
+    #[must_use]
+    pub fn callback(self) -> &'static str {
+        match self {
+            Self::Reboot => "power:confirm:reboot",
+            Self::PowerOff => "power:confirm:poweroff",
+        }
+    }
+
+    /// Short human label used in cards and results.
+    #[must_use]
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Reboot => "Reboot TV",
+            Self::PowerOff => "Power Off TV",
+        }
+    }
+
+    /// Icon paired with [`Self::title`].
+    #[must_use]
+    pub fn icon(self) -> &'static str {
+        match self {
+            Self::Reboot => "🔄",
+            Self::PowerOff => "🌙",
+        }
+    }
+}
+
+/// Confirmation keyboard for a pending reboot or shutdown.
+#[must_use]
+pub fn power_keyboard(action: PowerAction) -> serde_json::Value {
+    let label = match action {
+        PowerAction::Reboot => "🔄 Reboot Now",
+        PowerAction::PowerOff => "🌙 Power Off Now",
+    };
+    json!({
+        "inline_keyboard": [
+            [
+                { "text": label, "callback_data": action.callback() },
+                { "text": "❌ Cancel", "callback_data": "power:cancel" }
+            ]
+        ]
+    })
+}
+
+/// Keyboard left on a card once its request has been answered or expired.
+#[must_use]
+pub fn cancelled_keyboard() -> serde_json::Value {
+    json!({ "inline_keyboard": [] })
+}
+
 #[must_use]
 pub fn remote_keyboard() -> serde_json::Value {
     json!({
@@ -388,5 +336,36 @@ mod tests {
                 Some(expected.as_str())
             );
         }
+    }
+
+    #[test]
+    fn test_power_keyboard_encodes_action() {
+        let kb = power_keyboard(PowerAction::Reboot);
+        assert_eq!(
+            kb["inline_keyboard"][0][0]["callback_data"].as_str(),
+            Some("power:confirm:reboot")
+        );
+        let kb = power_keyboard(PowerAction::PowerOff);
+        assert_eq!(
+            kb["inline_keyboard"][0][0]["callback_data"].as_str(),
+            Some("power:confirm:poweroff")
+        );
+        assert_eq!(
+            kb["inline_keyboard"][0][1]["callback_data"].as_str(),
+            Some("power:cancel")
+        );
+    }
+
+    #[test]
+    fn test_power_action_parses_commands() {
+        assert_eq!(
+            PowerAction::from_command("/reboot"),
+            Some(PowerAction::Reboot)
+        );
+        assert_eq!(
+            PowerAction::from_command("/poweroff"),
+            Some(PowerAction::PowerOff)
+        );
+        assert_eq!(PowerAction::from_command("/power"), None);
     }
 }

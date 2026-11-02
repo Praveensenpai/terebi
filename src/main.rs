@@ -60,6 +60,10 @@ enum Commands {
         /// Key action: up, down, left, right, ok, back, home, pause, volup, voldown, mute
         key: String,
     },
+    /// Reboot the TV over ADB
+    Reboot,
+    /// Power the TV off over ADB
+    Poweroff,
     /// Connect to TV ADB interface
     Connect,
     /// Show the tail of the newest remote-key log
@@ -249,6 +253,23 @@ fn handle_open(tv: &TvController, app: &str) -> Result<()> {
     Ok(())
 }
 
+fn handle_power(tv: &TvController, power_off: bool) -> Result<()> {
+    let label = if power_off { "Power-off" } else { "Reboot" };
+    println!("  ⏻ Requesting {label} from TV...");
+    let outcome = if power_off {
+        tv.power_off()?
+    } else {
+        tv.reboot()?
+    };
+    let note = match outcome {
+        tv::PowerOutcome::Rebooted => "The TV will drop off ADB while it boots.",
+        tv::PowerOutcome::PoweredOff => "The TV is shutting down.",
+        tv::PowerOutcome::Sleep => "Shutdown was refused; sent the power key instead.",
+    };
+    println!("  {} {label} requested. {note}", "✔".green().bold());
+    Ok(())
+}
+
 fn handle_connect(tv: &TvController) -> Result<()> {
     println!("  🔌 Connecting to TV at {}...", tv.adb.target().cyan());
     if tv.adb.connect()? {
@@ -286,6 +307,8 @@ fn run_command(cmd: Commands, config: Option<TerebiConfig>) -> Result<()> {
         Commands::Clear { app } => handle_clear(&build_tv(config)?, &app),
         Commands::Open { app } => handle_open(&build_tv(config)?, &app),
         Commands::Remote { key } => handle_remote(&build_tv(config)?, &key),
+        Commands::Reboot => handle_power(&build_tv(config)?, false),
+        Commands::Poweroff => handle_power(&build_tv(config)?, true),
         Commands::Connect => handle_connect(&build_tv(config)?),
         Commands::Logs { lines } => {
             let cfg = config.unwrap_or(TerebiConfig::load()?);
