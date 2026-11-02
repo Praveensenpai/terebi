@@ -167,11 +167,12 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn prompt_setup () -> Result < Self >
   ```</｜｜DSML｜｜>
 
-### `src/discovery.rs` (Role: general, Lines: 80)
+### `src/discovery.rs` (Role: general, Lines: 119)
 - **Responsibility**: Core general logic in src/discovery.rs
 - **Imports**: use std :: net :: { IpAddr , SocketAddr , TcpStream , UdpSocket } , use std :: process :: Command , use std :: sync :: mpsc , use std :: thread , use std :: time :: Duration 
 - **Public Functions & Signatures**:
   ```rust
+  fn is_emulator_serial (serial : & str) -> bool
   fn find_attached_adb_device () -> Option < String >
   fn detect_local_subnet_prefix () -> Option < String >
   fn scan_subnet_for_adb (port : u16) -> Option < String >
