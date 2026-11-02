@@ -36,7 +36,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   const ADB_TIMEOUT : Duration = 20s (per-call hard deadline)
   ```
 
-### `src/bot/api.rs` (Role: api, Lines: 131)
+### `src/bot/api.rs` (Role: api, Lines: 193)
 - **Responsibility**: Core api logic in src/bot/api.rs
 - **Imports**: use anyhow :: Result , use reqwest :: blocking :: multipart :: Part , use reqwest :: blocking :: { multipart , Client } , use serde :: Deserialize , use serde_json :: json 
 - **Types & Enums**:
@@ -52,6 +52,8 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
 - **Public Functions & Signatures**:
   ```rust
   fn fetch_updates (client : & Client , token : & str , offset : i64) -> Result < Vec < Update > >
+  fn escape_html (text : & str) -> String
+  fn truncate_utf16 (text : & str , max : usize) -> String
   fn send_text (client : & Client , token : & str , chat_id : i64 , text : & str , reply_markup : Option < serde_json :: Value > ,) -> Result < () >
   fn answer_callback (client : & Client , token : & str , cb_id : & str , text : & str) -> Result < () >
   fn send_photo (client : & Client , token : & str , chat_id : i64 , caption : & str , image_bytes : Vec < u8 > ,) -> Result < () >
@@ -138,7 +140,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn remote_keyboard () -> serde_json :: Value
   ```
 
-### `src/bot.rs` (Role: general, Lines: 330)
+### `src/bot.rs` (Role: general, Lines: 339)
 - **Responsibility**: Core general logic in src/bot.rs
 - **Imports**: use anyhow :: { Context , Result } , use reqwest :: blocking :: Client , use std :: cell :: RefCell , use std :: time :: Duration , use crate :: config :: TerebiConfig , use crate :: tv :: TvController , use api :: { answer_callback , fetch_updates , send_photo , send_text , CallbackQuery , Message , User } , use ui :: { format_status_card , help_text , kill_keyboard , remote_keyboard , status_keyboard , } 
 - **Types & Enums**:

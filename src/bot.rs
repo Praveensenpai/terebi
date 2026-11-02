@@ -13,8 +13,8 @@ mod logs;
 mod ui;
 
 use api::{
-    answer_callback, fetch_updates, send_photo, send_text, set_my_commands, CallbackQuery, Message,
-    User,
+    answer_callback, escape_html, fetch_updates, send_photo, send_text, set_my_commands,
+    CallbackQuery, Message, User,
 };
 use ui::{format_status_card, help_text, kill_keyboard, remote_keyboard, status_keyboard};
 
@@ -171,20 +171,29 @@ fn send_screenshot(ctx: &BotContext, chat_id: i64) {
     };
 
     let is_blank_overlay = bytes.len() < 25_000;
+    let friendly = escape_html(&ctx.config.friendly_name);
     let caption = if is_blank_overlay {
         let now_playing = ctx.tv.get_status().ok().map_or_else(
             || ctx.config.friendly_name.clone(),
             |s| s.media.title.unwrap_or(s.app_name),
         );
         format!(
-            "📺 {} • Live Screenshot\n🎬 <b>Now Playing:</b> {now_playing}\nℹ️ <i>Video frame is protected by hardware overlay/DRM during active playback.</i>",
-            ctx.config.friendly_name
+            "📺 {friendly} • Live Screenshot\n🎬 <b>Now Playing:</b> {}\nℹ️ <i>Video frame is protected by hardware overlay/DRM during active playback.</i>",
+            escape_html(&now_playing)
         )
     } else {
-        format!("📺 {} • Live Screenshot", ctx.config.friendly_name)
+        format!("📺 {friendly} • Live Screenshot")
     };
 
-    let _ = send_photo(ctx.client, &ctx.config.bot_token, chat_id, &caption, bytes);
+    if let Err(e) = send_photo(ctx.client, &ctx.config.bot_token, chat_id, &caption, bytes) {
+        let _ = send_text(
+            ctx.client,
+            &ctx.config.bot_token,
+            chat_id,
+            &format!("⚠️ Failed to send screenshot: {e}"),
+            None,
+        );
+    }
 }
 
 fn handle_kill_command(ctx: &BotContext, chat_id: i64, input: &str) {

@@ -87,13 +87,46 @@ pub fn send_text(
     Ok(())
 }
 
+/// Telegram rejects callback answers longer than this.
+const CALLBACK_MAX: usize = 200;
+/// Telegram rejects photo captions longer than this.
+pub const CAPTION_MAX: usize = 1024;
+
+/// Escape the five HTML entities Telegram's `HTML` parse mode recognises.
+#[must_use]
+pub fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Truncate to at most `max` UTF-16 code units, which is how Telegram counts.
+#[must_use]
+pub fn truncate_utf16(text: &str, max: usize) -> String {
+    let mut used = 0;
+    let mut out = String::new();
+    for ch in text.chars() {
+        let cost = ch.len_utf16();
+        if used + cost > max {
+            break;
+        }
+        out.push(ch);
+        used += cost;
+    }
+    out
+}
+
 pub fn answer_callback(client: &Client, token: &str, cb_id: &str, text: &str) -> Result<()> {
     let url = format!("https://api.telegram.org/bot{token}/answerCallbackQuery");
     let payload = json!({
         "callback_query_id": cb_id,
-        "text": text
+        "text": truncate_utf16(text, CALLBACK_MAX)
     });
-    client.post(&url).json(&payload).send()?;
+    client
+        .post(&url)
+        .json(&payload)
+        .send()?
+        .error_for_status()?;
     Ok(())
 }
 
@@ -122,10 +155,39 @@ pub fn send_photo(
         .unwrap_or_else(|_| Part::bytes(vec![]));
     let form = multipart::Form::new()
         .text("chat_id", chat_id.to_string())
-        .text("caption", caption.to_string())
+        .text("caption", truncate_utf16(caption, CAPTION_MAX))
         .text("parse_mode", "HTML")
         .part("photo", part);
 
-    client.post(&url).multipart(form).send()?;
+    client
+        .post(&url)
+        .multipart(form)
+        .send()?
+        .error_for_status()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_escape_html() {
+        assert_eq!(escape_html("a<b>&c"), "a&lt;b&gt;&amp;c");
+        assert_eq!(escape_html("plain"), "plain");
+    }
+
+    #[test]
+    fn test_truncate_counts_utf16_units() {
+        // Each emoji is a surrogate pair: 2 UTF-16 units, 1 char.
+        assert_eq!(truncate_utf16("📺📺📺", 4), "📺📺");
+        assert_eq!(truncate_utf16("abcd", 2), "ab");
+        assert_eq!(truncate_utf16("abc", 10), "abc");
+    }
+
+    #[test]
+    fn test_truncate_respects_caption_limit() {
+        let long = "x".repeat(CAPTION_MAX + 500);
+        assert_eq!(truncate_utf16(&long, CAPTION_MAX).len(), CAPTION_MAX);
+    }
 }
