@@ -9,7 +9,7 @@ on:
 jobs:
   check:
     name: Test & Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -33,7 +33,7 @@ jobs:
 
   cross-build:
     name: Cross Build (aarch64)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
