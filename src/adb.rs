@@ -69,20 +69,25 @@ impl AdbDevice {
     }
 
     fn is_target_connected(target: &str) -> bool {
-        let Ok(output) = Command::new("adb").args(["devices"]).output() else {
-            return false;
-        };
-        let text = String::from_utf8_lossy(&output.stdout);
-        for line in text.lines() {
-            if line.starts_with(target) && line.contains("device") {
-                return true;
-            }
-        }
-        false
+        Self::device_state(target).as_deref() == Some("device")
+    }
+
+    /// State ADB reports for `target` (`device`, `offline`, `unauthorized`, ...).
+    fn device_state(target: &str) -> Option<String> {
+        let output = Command::new("adb").args(["devices"]).output().ok()?;
+        parse_device_state(&String::from_utf8_lossy(&output.stdout), target)
     }
 
     pub fn connect(&self) -> Result<bool> {
         let target = self.resolve_target()?;
+
+        // `adb connect` keeps an existing transport that is in a broken state,
+        // so a device stuck in `offline`/`authorizing` never recovers. The
+        // transport has to be torn down first.
+        if Self::device_state(&target).is_some_and(|state| state != "device") {
+            let _ = Command::new("adb").args(["disconnect", &target]).output();
+        }
+
         let output = Command::new("adb")
             .args(["connect", &target])
             .output()
@@ -164,6 +169,17 @@ impl AdbDevice {
     }
 }
 
+/// Extract the state ADB lists for `target`, skipping the header line.
+fn parse_device_state(devices_output: &str, target: &str) -> Option<String> {
+    for line in devices_output.lines().skip(1) {
+        let mut parts = line.split_whitespace();
+        if parts.next() == Some(target) {
+            return parts.next().map(str::to_string);
+        }
+    }
+    None
+}
+
 /// True when an ADB error means the device hung up mid-command, which is the
 /// expected outcome of a reboot request rather than a failure.
 fn is_transport_drop(err: &anyhow::Error) -> bool {
@@ -237,6 +253,25 @@ mod tests {
     fn test_adb_target_string() {
         let dev = AdbDevice::new("192.168.1.100".to_string(), 5555);
         assert_eq!(dev.target(), "192.168.1.100:5555");
+    }
+
+    #[test]
+    fn test_parse_device_state_reads_reported_state() {
+        let output = concat!(
+            "List of devices attached\n",
+            "192.168.1.38:5555\toffline\n",
+            "emulator-5554\tdevice\n",
+            "\n"
+        );
+        assert_eq!(
+            parse_device_state(output, "192.168.1.38:5555").as_deref(),
+            Some("offline")
+        );
+        assert_eq!(
+            parse_device_state(output, "emulator-5554").as_deref(),
+            Some("device")
+        );
+        assert_eq!(parse_device_state(output, "10.0.0.2:5555"), None);
     }
 
     #[test]
