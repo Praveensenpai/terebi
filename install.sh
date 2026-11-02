@@ -42,6 +42,49 @@ detect_target() {
     TARGET="${TARGET_ARCH}-unknown-linux-gnu"
 }
 
+# Print the SHA-256 digest of a file using whichever tool is available.
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        log_error "No SHA-256 tool found (need 'sha256sum' or 'shasum')."
+        exit 1
+    fi
+}
+
+# Abort unless the downloaded archive matches the release's SHA256SUMS.txt.
+verify_checksum() {
+    local download_url="$1" archive="$2" asset_name="$3"
+    local sums_url="${download_url%/*}/SHA256SUMS.txt"
+    local sums_file="${TMP_DIR}/SHA256SUMS.txt"
+
+    log_info "Verifying checksum..."
+    if ! curl -fsSL "${sums_url}" -o "${sums_file}"; then
+        log_error "Could not download ${sums_url}. Refusing to install an unverified binary."
+        exit 1
+    fi
+
+    local expected
+    expected="$(awk -v n="${asset_name}" '$2 == n {print $1; exit}' "${sums_file}")"
+    if [[ -z "${expected}" ]]; then
+        log_error "No checksum entry for ${asset_name} in SHA256SUMS.txt."
+        exit 1
+    fi
+
+    local actual
+    actual="$(sha256_of "${archive}")"
+    if [[ "${actual}" != "${expected}" ]]; then
+        log_error "Checksum mismatch for ${asset_name}."
+        log_error "expected: ${expected}"
+        log_error "actual:   ${actual}"
+        log_error "Aborting: the download may be corrupted or tampered with."
+        exit 1
+    fi
+    log_ok "Checksum verified."
+}
+
 download_release() {
     detect_target
     log_info "Fetching latest release for ${TARGET}..."
@@ -60,11 +103,16 @@ download_release() {
         exit 1
     fi
 
-    log_info "Downloading ${download_url}..."
-    curl -fSL "${download_url}" -o "${TMP_DIR}/terebi.tar.gz"
+    local asset_name
+    asset_name="$(basename "${download_url}")"
+
+    log_info "Downloading ${asset_name}..."
+    curl -fSL "${download_url}" -o "${TMP_DIR}/${asset_name}"
+
+    verify_checksum "${download_url}" "${TMP_DIR}/${asset_name}" "${asset_name}"
 
     log_info "Extracting release archive..."
-    tar -xzf "${TMP_DIR}/terebi.tar.gz" -C "${TMP_DIR}"
+    tar -xzf "${TMP_DIR}/${asset_name}" -C "${TMP_DIR}"
 
     local extracted_bin
     extracted_bin="$(find "${TMP_DIR}" -name terebi -type f | head -n 1)"
