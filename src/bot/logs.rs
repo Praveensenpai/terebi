@@ -8,6 +8,10 @@ use super::BotContext;
 const TAIL_LINES: usize = 40;
 const MAX_TEXT_ITEMS: usize = 25;
 
+/// Telegram rejects any message longer than this with HTTP 400.
+const TELEGRAM_MAX: usize = 4096;
+const TRUNCATION_MARKER: &str = "\n… (truncated)";
+
 /// `/logs` — show the tail of the newest key log file.
 pub(super) fn send_log_tail(ctx: &BotContext, chat_id: i64) {
     let dir = ctx.config.logging.path();
@@ -42,10 +46,9 @@ pub(super) fn send_log_tail(ctx: &BotContext, chat_id: i64) {
     } else {
         lines.join("\n")
     };
-    let msg = format!(
-        "🗒 <b>Remote Key Log</b> • <code>{name}</code>\n<pre>{}</pre>",
-        escape_html(&body)
-    );
+    let prefix = format!("🗒 <b>Remote Key Log</b> • <code>{name}</code>\n<pre>");
+    let suffix = "</pre>";
+    let msg = format!("{prefix}{}{suffix}", clamp_body(&prefix, &body, suffix));
     let _ = send_text(ctx.client, &ctx.config.bot_token, chat_id, &msg, None);
 }
 
@@ -159,16 +162,14 @@ pub(super) fn send_screen_text(ctx: &BotContext, chat_id: i64) {
                 .collect::<Vec<_>>()
                 .join("\n");
             let extra = texts.len().saturating_sub(MAX_TEXT_ITEMS);
-            let suffix = if extra > 0 {
+            let more = if extra > 0 {
                 format!("\n<i>… {extra} more</i>")
             } else {
                 String::new()
             };
-            let msg = format!(
-                "🔎 <b>On-screen text</b> ({} items)\n<pre>{}</pre>{suffix}",
-                texts.len(),
-                escape_html(&body)
-            );
+            let prefix = format!("🔎 <b>On-screen text</b> ({} items)\n<pre>", texts.len());
+            let suffix = format!("</pre>{more}");
+            let msg = format!("{prefix}{}{suffix}", clamp_body(&prefix, &body, &suffix));
             let _ = send_text(ctx.client, &ctx.config.bot_token, chat_id, &msg, None);
         }
         Err(e) => {
@@ -183,10 +184,43 @@ pub(super) fn send_screen_text(ctx: &BotContext, chat_id: i64) {
     }
 }
 
-fn escape_html(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
+/// Escape `body` for the HTML parse mode and truncate it so that
+/// `prefix + escaped + suffix` stays within Telegram's 4096 UTF-16 unit cap.
+///
+/// Truncation is applied to the escaped form because escaping can expand a
+/// single character up to five times (`&` becomes `&amp;`).
+fn clamp_body(prefix: &str, body: &str, suffix: &str) -> String {
+    let reserved = prefix.encode_utf16().count()
+        + suffix.encode_utf16().count()
+        + TRUNCATION_MARKER.encode_utf16().count();
+    let budget = TELEGRAM_MAX.saturating_sub(reserved);
+
+    let mut out = String::new();
+    let mut used = 0;
+    for ch in body.chars() {
+        let replacement = match ch {
+            '&' => "&amp;",
+            '<' => "&lt;",
+            '>' => "&gt;",
+            _ => "",
+        };
+        let cost = if replacement.is_empty() {
+            ch.len_utf16()
+        } else {
+            replacement.len()
+        };
+        if used + cost > budget {
+            out.push_str(TRUNCATION_MARKER);
+            break;
+        }
+        if replacement.is_empty() {
+            out.push(ch);
+        } else {
+            out.push_str(replacement);
+        }
+        used += cost;
+    }
+    out
 }
 
 #[cfg(test)]
@@ -194,8 +228,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_escape_html() {
-        assert_eq!(escape_html("a<b>&c"), "a&lt;b&gt;&amp;c");
-        assert_eq!(escape_html("plain"), "plain");
+    fn test_clamp_escapes_html() {
+        assert_eq!(clamp_body("", "a<b>&c", ""), "a&lt;b&gt;&amp;c");
+        assert_eq!(clamp_body("", "plain", ""), "plain");
+    }
+
+    #[test]
+    fn test_clamp_truncates_overlong_body() {
+        let body = "&".repeat(10_000);
+        let out = clamp_body("<pre>", &body, "</pre>");
+        assert!(out.ends_with(TRUNCATION_MARKER));
+        assert!(out.encode_utf16().count() < TELEGRAM_MAX);
+    }
+
+    #[test]
+    fn test_clamp_keeps_short_body_intact() {
+        let body = "line one\nline two";
+        assert_eq!(clamp_body("<pre>", body, "</pre>"), body);
     }
 }

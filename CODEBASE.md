@@ -36,7 +36,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   const ADB_TIMEOUT : Duration = 20s (per-call hard deadline)
   ```
 
-### `src/bot/api.rs` (Role: api, Lines: 127)
+### `src/bot/api.rs` (Role: api, Lines: 131)
 - **Responsibility**: Core api logic in src/bot/api.rs
 - **Imports**: use anyhow :: Result , use reqwest :: blocking :: multipart :: Part , use reqwest :: blocking :: { multipart , Client } , use serde :: Deserialize , use serde_json :: json 
 - **Types & Enums**:
@@ -110,12 +110,12 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   pub fn tail (path : & Path , count : usize) -> Result < Vec < String > >
   ```
 
-### `src/bot/logs.rs` (Role: api, Lines: 201)
+### `src/bot/logs.rs` (Role: api, Lines: 249)
 - **Responsibility**: Telegram handlers for key-capture control, log tailing and on-screen text
 - **Imports**: anyhow::Result, serde_json::json, crate::bot (api, BotContext), crate::input_log
 - **Public Functions & Signatures**:
   ```rust
-  fn escape_html (text : & str) -> String
+  fn clamp_body (prefix : & str , body : & str , suffix : & str) -> String
   fn send_log_tail (ctx : & BotContext , chat_id : i64)
   fn handle_log_toggle (ctx : & BotContext , chat_id : i64 , arg : Option < & str >)
   fn start_capture (ctx : & BotContext , chat_id : i64)

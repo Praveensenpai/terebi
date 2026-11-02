@@ -79,7 +79,11 @@ pub fn send_text(
         payload["reply_markup"] = markup;
     }
 
-    client.post(&url).json(&payload).send()?;
+    client
+        .post(&url)
+        .json(&payload)
+        .send()?
+        .error_for_status()?;
     Ok(())
 }
 
