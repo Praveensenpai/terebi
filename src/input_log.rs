@@ -6,15 +6,12 @@
 //! no timezone or host-clock assumptions are made.
 
 use anyhow::{Context, Result};
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
 
-use crate::adb::AdbDevice;
+mod capture;
+
+pub use capture::InputLogger;
 
 const KEY_MARKER: &str = "WindowManager: handleKeyBeforeQueueing event=";
 const STAMP_LEN: usize = 23;
@@ -77,134 +74,6 @@ fn field<'a>(text: &'a str, key: &str) -> Option<&'a str> {
     text.split_whitespace()
         .find_map(|token| token.strip_prefix(key))
         .map(|value| value.trim_end_matches(','))
-}
-
-/// Date-stamped append writer that rolls over when the TV clock changes day.
-struct DailyWriter {
-    dir: PathBuf,
-    date: String,
-    file: Option<File>,
-}
-
-impl DailyWriter {
-    fn new(dir: PathBuf) -> Self {
-        Self {
-            dir,
-            date: String::new(),
-            file: None,
-        }
-    }
-
-    fn write(&mut self, entry: &KeyEntry) -> Result<()> {
-        if entry.date != self.date {
-            fs::create_dir_all(&self.dir)
-                .with_context(|| format!("Failed to create {}", self.dir.display()))?;
-            let path = self.dir.join(format!("{}.log", entry.date));
-            self.file = Some(
-                OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&path)
-                    .with_context(|| format!("Failed to open {}", path.display()))?,
-            );
-            self.date.clone_from(&entry.date);
-        }
-        if let Some(file) = self.file.as_mut() {
-            writeln!(file, "{}", entry.to_line())?;
-        }
-        Ok(())
-    }
-}
-
-/// Background logcat reader. Dropping it stops the capture and kills the child.
-pub struct InputLogger {
-    child: Arc<Mutex<Option<Child>>>,
-    running: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
-}
-
-impl InputLogger {
-    /// Spawn `adb logcat` and start appending key events to `dir`.
-    pub fn start(adb: &AdbDevice, dir: &Path) -> Result<Self> {
-        adb.ensure_connected()?;
-        let target = adb.target();
-        fs::create_dir_all(dir).with_context(|| format!("Failed to create {}", dir.display()))?;
-
-        let mut child = Command::new("adb")
-            .args([
-                "-s",
-                &target,
-                "logcat",
-                "-v",
-                "year",
-                "threadtime",
-                "-T",
-                "1",
-                "-s",
-                "WindowManager",
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .context("Failed to start adb logcat")?;
-
-        let stdout = child
-            .stdout
-            .take()
-            .context("logcat produced no stdout pipe")?;
-        let shared = Arc::new(Mutex::new(Some(child)));
-        let running = Arc::new(AtomicBool::new(true));
-
-        let flag = Arc::clone(&running);
-        let dir_owned = dir.to_path_buf();
-        let thread = thread::spawn(move || {
-            let mut writer = DailyWriter::new(dir_owned);
-            for line in BufReader::new(stdout).lines() {
-                if !flag.load(Ordering::Relaxed) {
-                    break;
-                }
-                let Ok(line) = line else { break };
-                if let Some(entry) = parse_key_line(&line) {
-                    if writer.write(&entry).is_err() {
-                        break;
-                    }
-                }
-            }
-            flag.store(false, Ordering::Relaxed);
-        });
-
-        Ok(Self {
-            child: shared,
-            running,
-            thread: Some(thread),
-        })
-    }
-
-    /// Whether the reader thread is still consuming events.
-    #[must_use]
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::Relaxed)
-    }
-
-    /// Stop the capture and join the reader thread.
-    pub fn stop(&mut self) {
-        self.running.store(false, Ordering::Relaxed);
-        if let Ok(mut guard) = self.child.lock() {
-            if let Some(mut child) = guard.take() {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-        }
-        if let Some(handle) = self.thread.take() {
-            let _ = handle.join();
-        }
-    }
-}
-
-impl Drop for InputLogger {
-    fn drop(&mut self) {
-        self.stop();
-    }
 }
 
 /// Newest key log file in `dir`, chosen by the date in the file name.
@@ -346,20 +215,6 @@ mod tests {
         fs::write(&path, "a\nb\nc\nd\n")?;
         assert_eq!(tail(&path, 2)?, vec!["c", "d"]);
         assert_eq!(tail(&path, 99)?.len(), 4);
-        let _ = fs::remove_dir_all(&dir);
-        Ok(())
-    }
-
-    #[test]
-    fn test_daily_writer_rotates_across_dates() -> Result<()> {
-        let dir = temp_dir("rotate");
-        let _ = fs::remove_dir_all(&dir);
-        let mut writer = DailyWriter::new(dir.clone());
-        for date in ["2026-11-01", "2026-11-01", "2026-11-02"] {
-            writer.write(&sample(date, "10:00:00.000", "KEYCODE_HOME", "down"))?;
-        }
-        assert_eq!(tail(&dir.join("2026-11-01.log"), 10)?.len(), 2);
-        assert_eq!(tail(&dir.join("2026-11-02.log"), 10)?.len(), 1);
         let _ = fs::remove_dir_all(&dir);
         Ok(())
     }

@@ -158,23 +158,37 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn discover_tv_ip (port : u16) -> Option < String >
   ```
 
-### `src/input_log.rs` (Role: general, Lines: 366)
-- **Responsibility**: Core general logic in src/input_log.rs
-- **Imports**: use anyhow :: { Context , Result } , use std :: fs :: { self , File , OpenOptions } , use std :: io :: { BufRead , BufReader , Write } , use std :: path :: { Path , PathBuf } , use std :: process :: { Child , Command , Stdio } , use std :: sync :: atomic :: { AtomicBool , Ordering } , use std :: sync :: { Arc , Mutex } , use std :: thread :: { self , JoinHandle } , use crate :: adb :: AdbDevice 
+### `src/input_log.rs` (Role: general, Lines: 221)
+- **Responsibility**: Key-event parsing and log-file helpers; re-exports the supervised capture logger
+- **Imports**: use anyhow :: { Context , Result } , use std :: fs , use std :: path :: { Path , PathBuf }
 - **Types & Enums**:
   ```rust
   pub struct KeyEntry
-  pub struct InputLogger
+  pub use capture :: InputLogger
   ```
 - **Public Functions & Signatures**:
   ```rust
   fn to_line (& self) -> String
   fn parse_key_line (line : & str) -> Option < KeyEntry >
-  fn start (adb : & AdbDevice , dir : & Path) -> Result < Self >
-  fn is_running (& self) -> bool
-  fn stop (& mut self)
   fn latest_log (dir : & Path) -> Option < PathBuf >
   fn tail (path : & Path , count : usize) -> Result < Vec < String > >
+  ```
+
+### `src/input_log/capture.rs` (Role: infra, Lines: 280)
+- **Responsibility**: Supervised `adb logcat` reader that reconnects and respawns after TV sleep, reboot, or ADB loss; reaps children to avoid zombies
+- **Imports**: use anyhow :: { Context , Result } , use std :: fs :: { self , File , OpenOptions } , use std :: io :: { BufRead , BufReader , Write } , use std :: path :: { Path , PathBuf } , use std :: process :: { Child , Command , Stdio } , use std :: sync :: atomic :: { AtomicBool , Ordering } , use std :: sync :: { Arc , Mutex } , use std :: thread :: { self , JoinHandle } , use std :: time :: Duration , use crate :: adb :: AdbDevice , use super :: { parse_key_line , KeyEntry }
+- **Types & Enums**:
+  ```rust
+  pub struct InputLogger
+  struct Shared
+  struct DailyWriter
+  ```
+- **Public Functions & Signatures**:
+  ```rust
+  fn start (adb : & AdbDevice , dir : & Path) -> Result < Self >
+  fn is_running (& self) -> bool
+  fn is_capturing (& self) -> bool
+  fn stop (& mut self)
   ```
 
 ### `src/main.rs` (Role: general, Lines: 337)

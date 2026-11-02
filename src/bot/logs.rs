@@ -122,8 +122,9 @@ pub(super) fn stop_capture(ctx: &BotContext, chat_id: i64) {
 pub(super) fn send_capture_status(ctx: &BotContext, chat_id: i64) {
     let slot = ctx.logger.borrow();
     let state = match slot.as_ref() {
-        Some(logger) if logger.is_running() => "🟢 capturing",
-        Some(_) => "🟡 reader exited (TV unreachable?)",
+        Some(logger) if logger.is_capturing() => "🟢 capturing",
+        Some(logger) if logger.is_running() => "🟡 reconnecting (TV asleep or off)",
+        Some(_) => "🟡 reader stopped",
         None => "🔴 stopped",
     };
     let dir = ctx.config.logging.path();
