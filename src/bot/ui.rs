@@ -53,6 +53,10 @@ pub fn format_status_card(friendly_name: &str, status: &TvStatus) -> String {
     )
 }
 
+fn btn(text: &str, data: &str) -> serde_json::Value {
+    json!({ "text": text, "callback_data": data })
+}
+
 /// Telegram rejects a message if any `callback_data` exceeds 64 bytes, so
 /// long package names fall back to actions that resolve the app at tap time.
 fn fits_callback(prefix: &str, package: &str) -> bool {
@@ -73,17 +77,9 @@ pub fn status_keyboard(package: &str, app_name: &str) -> serde_json::Value {
     };
     json!({
         "inline_keyboard": [
-            [
-                { "text": format!("🛑 Kill {app_name}"), "callback_data": kill_data },
-                { "text": "🧹 Erase All Data", "callback_data": clear_data }
-            ],
-            [
-                { "text": "📸 Screen", "callback_data": "cmd:screen" },
-                { "text": "🎮 Remote", "callback_data": "cmd:remote" }
-            ],
-            [
-                { "text": "🔄 Refresh", "callback_data": "cmd:status" }
-            ]
+            [btn(&format!("🛑 Kill {app_name}"), &kill_data), btn("🧹 Erase All Data", &clear_data)],
+            [btn("📸 Screen", "cmd:screen"), btn("🎮 Remote", "cmd:remote")],
+            [btn("🔄 Refresh", "cmd:status")]
         ]
     })
 }
@@ -92,22 +88,10 @@ pub fn status_keyboard(package: &str, app_name: &str) -> serde_json::Value {
 pub fn kill_keyboard() -> serde_json::Value {
     json!({
         "inline_keyboard": [
-            [
-                { "text": "🛑 YouTube", "callback_data": "kill:com.google.android.youtube.tv" },
-                { "text": "🛑 SmartTube", "callback_data": "kill:com.teamsmart.videomanager.tv" }
-            ],
-            [
-                { "text": "🛑 Netflix", "callback_data": "kill:com.netflix.ninja" },
-                { "text": "🛑 Stremio", "callback_data": "kill:com.frolo.stremio" }
-            ],
-            [
-                { "text": "🛑 Prime Video", "callback_data": "kill:com.amazon.amazonvideo.livingroom" },
-                { "text": "🛑 Hotstar", "callback_data": "kill:in.startv.hotstar" }
-            ],
-            [
-                { "text": "🛑 Kill Current App", "callback_data": "kill:current" },
-                { "text": "🏠 TV Home", "callback_data": "key:KEYCODE_HOME" }
-            ]
+            [btn("🛑 YouTube", "kill:com.google.android.youtube.tv"), btn("🛑 SmartTube", "kill:com.teamsmart.videomanager.tv")],
+            [btn("🛑 Netflix", "kill:com.netflix.ninja"), btn("🛑 Stremio", "kill:com.frolo.stremio")],
+            [btn("🛑 Prime Video", "kill:com.amazon.amazonvideo.livingroom"), btn("🛑 Hotstar", "kill:in.startv.hotstar")],
+            [btn("🛑 Kill Current App", "kill:current"), btn("🏠 TV Home", "key:KEYCODE_HOME")]
         ]
     })
 }
@@ -128,16 +112,16 @@ pub fn clear_apps_keyboard(apps: &[String], page: usize) -> serde_json::Value {
         })
         .collect();
 
-    let mut nav: Vec<serde_json::Value> = Vec::with_capacity(3);
+    let mut nav = Vec::with_capacity(3);
     if page > 0 {
-        nav.push(json!({ "text": "◀ Prev", "callback_data": format!("clearlist:{}", page - 1) }));
+        nav.push(btn("◀ Prev", &format!("clearlist:{}", page - 1)));
     }
-    nav.push(json!({ "text": format!("📄 {}/{pages}", page + 1), "callback_data": "noop" }));
+    nav.push(btn(&format!("📄 {}/{pages}", page + 1), "noop"));
     if page + 1 < pages {
-        nav.push(json!({ "text": "Next ▶", "callback_data": format!("clearlist:{}", page + 1) }));
+        nav.push(btn("Next ▶", &format!("clearlist:{}", page + 1)));
     }
     rows.push(json!(nav));
-    rows.push(json!([{ "text": "🔄 Refresh App List", "callback_data": "clearrefresh" }]));
+    rows.push(json!([btn("🔄 Refresh App List", "clearrefresh")]));
 
     json!({ "inline_keyboard": rows })
 }
@@ -146,12 +130,34 @@ pub fn clear_apps_keyboard(apps: &[String], page: usize) -> serde_json::Value {
 #[must_use]
 pub fn confirm_clear_keyboard(target: &str) -> serde_json::Value {
     json!({
+        "inline_keyboard": [[
+            btn("✅ Wipe Data", &format!("clear:{target}")),
+            btn("❌ Cancel", "wipecancel")
+        ]]
+    })
+}
+
+/// Delay selection keyboard offered after tapping "Wipe Data".
+#[must_use]
+pub fn wipe_delay_keyboard(target: &str) -> serde_json::Value {
+    json!({
         "inline_keyboard": [
+            [btn("⚡ Immediate", &format!("wipe:0:{target}"))],
             [
-                { "text": "✅ Wipe Data", "callback_data": format!("clear:{target}") },
-                { "text": "❌ Cancel", "callback_data": "noop" }
-            ]
+                btn("⏱️ 1 min", &format!("wipe:1:{target}")),
+                btn("⏱️ 2 min", &format!("wipe:2:{target}")),
+                btn("⏱️ 5 min", &format!("wipe:5:{target}"))
+            ],
+            [btn("❌ Cancel", "wipecancel")]
         ]
+    })
+}
+
+/// Keyboard on an active scheduled wipe allowing cancellation.
+#[must_use]
+pub fn wipe_scheduled_keyboard(id: u64) -> serde_json::Value {
+    json!({
+        "inline_keyboard": [[btn("❌ Cancel Scheduled Wipe", &format!("wipecancel:{id}"))]]
     })
 }
 
@@ -211,12 +217,7 @@ pub fn power_keyboard(action: PowerAction) -> serde_json::Value {
         PowerAction::PowerOff => "🌙 Power Off Now",
     };
     json!({
-        "inline_keyboard": [
-            [
-                { "text": label, "callback_data": action.callback() },
-                { "text": "❌ Cancel", "callback_data": "power:cancel" }
-            ]
-        ]
+        "inline_keyboard": [[btn(label, action.callback()), btn("❌ Cancel", "power:cancel")]]
     })
 }
 
@@ -230,31 +231,11 @@ pub fn cancelled_keyboard() -> serde_json::Value {
 pub fn remote_keyboard() -> serde_json::Value {
     json!({
         "inline_keyboard": [
-            [
-                { "text": " ", "callback_data": "noop" },
-                { "text": "⬆️", "callback_data": "key:KEYCODE_DPAD_UP" },
-                { "text": " ", "callback_data": "noop" }
-            ],
-            [
-                { "text": "⬅️", "callback_data": "key:KEYCODE_DPAD_LEFT" },
-                { "text": "🔘 OK", "callback_data": "key:KEYCODE_DPAD_CENTER" },
-                { "text": "➡️", "callback_data": "key:KEYCODE_DPAD_RIGHT" }
-            ],
-            [
-                { "text": " ", "callback_data": "noop" },
-                { "text": "⬇️", "callback_data": "key:KEYCODE_DPAD_DOWN" },
-                { "text": " ", "callback_data": "noop" }
-            ],
-            [
-                { "text": "🔙 Back", "callback_data": "key:KEYCODE_BACK" },
-                { "text": "🏠 Home", "callback_data": "key:KEYCODE_HOME" },
-                { "text": "⏯ Pause", "callback_data": "key:KEYCODE_MEDIA_PLAY_PAUSE" }
-            ],
-            [
-                { "text": "🔉 Vol -", "callback_data": "key:KEYCODE_VOLUME_DOWN" },
-                { "text": "🔊 Vol +", "callback_data": "key:KEYCODE_VOLUME_UP" },
-                { "text": "🔇 Mute", "callback_data": "key:KEYCODE_VOLUME_MUTE" }
-            ]
+            [btn(" ", "noop"), btn("⬆️", "key:KEYCODE_DPAD_UP"), btn(" ", "noop")],
+            [btn("⬅️", "key:KEYCODE_DPAD_LEFT"), btn("🔘 OK", "key:KEYCODE_DPAD_CENTER"), btn("➡️", "key:KEYCODE_DPAD_RIGHT")],
+            [btn(" ", "noop"), btn("⬇️", "key:KEYCODE_DPAD_DOWN"), btn(" ", "noop")],
+            [btn("🔙 Back", "key:KEYCODE_BACK"), btn("🏠 Home", "key:KEYCODE_HOME"), btn("⏯ Pause", "key:KEYCODE_MEDIA_PLAY_PAUSE")],
+            [btn("🔉 Vol -", "key:KEYCODE_VOLUME_DOWN"), btn("🔊 Vol +", "key:KEYCODE_VOLUME_UP"), btn("🔇 Mute", "key:KEYCODE_VOLUME_MUTE")]
         ]
     })
 }
@@ -335,7 +316,45 @@ mod tests {
                 kb["inline_keyboard"][0][0]["callback_data"].as_str(),
                 Some(expected.as_str())
             );
+            assert_eq!(
+                kb["inline_keyboard"][0][1]["callback_data"].as_str(),
+                Some("wipecancel")
+            );
         }
+    }
+
+    #[test]
+    fn test_wipe_delay_keyboard_options() {
+        let kb = wipe_delay_keyboard("com.example.app");
+        assert_eq!(
+            kb["inline_keyboard"][0][0]["callback_data"].as_str(),
+            Some("wipe:0:com.example.app")
+        );
+        assert_eq!(
+            kb["inline_keyboard"][1][0]["callback_data"].as_str(),
+            Some("wipe:1:com.example.app")
+        );
+        assert_eq!(
+            kb["inline_keyboard"][1][1]["callback_data"].as_str(),
+            Some("wipe:2:com.example.app")
+        );
+        assert_eq!(
+            kb["inline_keyboard"][1][2]["callback_data"].as_str(),
+            Some("wipe:5:com.example.app")
+        );
+        assert_eq!(
+            kb["inline_keyboard"][2][0]["callback_data"].as_str(),
+            Some("wipecancel")
+        );
+    }
+
+    #[test]
+    fn test_wipe_scheduled_keyboard_encodes_id() {
+        let kb = wipe_scheduled_keyboard(42);
+        assert_eq!(
+            kb["inline_keyboard"][0][0]["callback_data"].as_str(),
+            Some("wipecancel:42")
+        );
     }
 
     #[test]

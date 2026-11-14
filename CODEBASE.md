@@ -77,11 +77,28 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn send_photo (client : & Client , token : & str , chat_id : i64 , caption : & str , image_bytes : Vec < u8 > ,) -> Result < () >
   ```
 
-### `src/bot/clear.rs` (Role: general, Lines: 195)
-- **Responsibility**: Core general logic in src/bot/clear.rs
-- **Imports**: use anyhow :: Result , use crate :: apps :: display_name , use crate :: bot :: api :: { answer_callback , send_text , CallbackQuery } , use crate :: bot :: ui :: { clear_apps_keyboard , confirm_clear_keyboard } , use super :: BotContext 
+### `src/bot/clear/scheduler.rs` (Role: general, Lines: 199)
+- **Responsibility**: Core general logic in src/bot/clear/scheduler.rs
+- **Imports**: use std :: sync :: atomic :: { AtomicBool , AtomicU64 , Ordering } , use std :: sync :: { Arc , Mutex } , use std :: time :: { Duration , Instant } , use crate :: bot :: api :: send_text , use crate :: tv :: TvController 
+- **Types & Enums**:
+  ```rust
+  pub struct ScheduleArgs
+  pub struct ScheduledWipe
+  pub struct WipeScheduler
+  ```
+- **Public Functions & Signatures**:
+  ```rust
+  fn new () -> Self
+  fn schedule (self : & Arc < Self > , args : ScheduleArgs) -> u64
+  fn cancel (& self , id : u64) -> Option < (String , String) >
+  fn cancel_all (& self) -> Vec < (String , String) >
+  ```
 
-### `src/bot/commands.rs` (Role: general, Lines: 134)
+### `src/bot/clear.rs` (Role: general, Lines: 385)
+- **Responsibility**: Core general logic in src/bot/clear.rs
+- **Imports**: use anyhow :: Result , use crate :: apps :: display_name , use crate :: bot :: api :: { answer_callback , edit_message_text , send_text , CallbackQuery } , use crate :: bot :: ui :: { cancelled_keyboard , clear_apps_keyboard , confirm_clear_keyboard , wipe_delay_keyboard , wipe_scheduled_keyboard , } , use super :: BotContext , pub use scheduler :: { ScheduleArgs , WipeScheduler } 
+
+### `src/bot/commands.rs` (Role: general, Lines: 140)
 - **Responsibility**: Core general logic in src/bot/commands.rs
 - **Imports**: use serde_json :: json 
 - **Public Functions & Signatures**:
@@ -98,7 +115,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
 - **Responsibility**: Core general logic in src/bot/power.rs
 - **Imports**: use std :: time :: { Duration , Instant } , use crate :: bot :: api :: { answer_callback , edit_message_text , send_text , CallbackQuery , Message } , use crate :: bot :: ui :: { cancelled_keyboard , power_keyboard , PowerAction } , use crate :: tv :: PowerOutcome , use super :: BotContext 
 
-### `src/bot/ui.rs` (Role: tui, Lines: 371)
+### `src/bot/ui.rs` (Role: tui, Lines: 390)
 - **Responsibility**: Core tui logic in src/bot/ui.rs
 - **Imports**: use serde_json :: json , use crate :: apps :: { display_name , page_count , page_slice } , use crate :: session :: format_duration , use crate :: tv :: TvStatus 
 - **Types & Enums**:
@@ -112,6 +129,8 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn kill_keyboard () -> serde_json :: Value
   fn clear_apps_keyboard (apps : & [String] , page : usize) -> serde_json :: Value
   fn confirm_clear_keyboard (target : & str) -> serde_json :: Value
+  fn wipe_delay_keyboard (target : & str) -> serde_json :: Value
+  fn wipe_scheduled_keyboard (id : u64) -> serde_json :: Value
   fn from_command (command : & str) -> Option < Self >
   fn callback (self) -> & 'static str
   fn title (self) -> & 'static str
@@ -121,9 +140,9 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn remote_keyboard () -> serde_json :: Value
   ```
 
-### `src/bot.rs` (Role: general, Lines: 353)
+### `src/bot.rs` (Role: general, Lines: 365)
 - **Responsibility**: Core general logic in src/bot.rs
-- **Imports**: use anyhow :: { Context , Result } , use reqwest :: blocking :: Client , use std :: cell :: RefCell , use std :: time :: { Duration , Instant } , use crate :: config :: TerebiConfig , use crate :: input_log :: InputLogger , use crate :: tv :: TvController , use api :: { answer_callback , escape_html , fetch_updates , send_photo , send_text , set_my_commands , CallbackQuery , Message , User , } , use ui :: { format_status_card , kill_keyboard , remote_keyboard , status_keyboard , PowerAction } 
+- **Imports**: use anyhow :: { Context , Result } , use reqwest :: blocking :: Client , use std :: cell :: RefCell , use std :: sync :: Arc , use std :: time :: { Duration , Instant } , use crate :: config :: TerebiConfig , use crate :: input_log :: InputLogger , use crate :: tv :: TvController , use api :: { answer_callback , escape_html , fetch_updates , send_photo , send_text , set_my_commands , CallbackQuery , Message , User , } , use ui :: { format_status_card , kill_keyboard , remote_keyboard , status_keyboard , PowerAction } 
 - **Public Functions & Signatures**:
   ```rust
   fn run_bot (config : & TerebiConfig) -> Result < () >
@@ -192,7 +211,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
 - **Responsibility**: Core general logic in src/main.rs
 - **Imports**: use anyhow :: Result , use clap :: { Parser , Subcommand } , use colored :: Colorize , use config :: TerebiConfig , use tv :: TvController 
 
-### `src/media.rs` (Role: general, Lines: 229)
+### `src/media.rs` (Role: general, Lines: 234)
 - **Responsibility**: Core general logic in src/media.rs
 - **Types & Enums**:
   ```rust

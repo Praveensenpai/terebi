@@ -55,9 +55,15 @@ const COMMANDS: &[CommandSpec] = &[
     ),
     cmd(
         "clear",
-        " [app]",
-        "Erase ALL app data like a fresh install; confirms first",
+        " [app] [m]",
+        "Erase app data immediately or after 1, 2, 5 min delay",
         "🧹",
+    ),
+    cmd(
+        "cancelwipe",
+        "",
+        "Cancel any pending scheduled app data wipes",
+        "🛑",
     ),
     cmd("open", " [app]", "Launch an app on the TV", "🚀"),
     cmd(

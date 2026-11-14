@@ -161,29 +161,34 @@ pub fn resolve_package(input: &str) -> Option<String> {
     }
 }
 
+fn extract_package_from_token(token: &str) -> Option<String> {
+    if !token.contains('/') {
+        return None;
+    }
+    let clean = token.trim_matches(|c| c == '{' || c == '}' || c == ',');
+    let pkg = clean.split('/').next()?;
+    if !pkg.is_empty() && pkg.contains('.') {
+        Some(pkg.to_string())
+    } else {
+        None
+    }
+}
+
+fn extract_package_from_line(line: &str) -> Option<String> {
+    let matches_focus = line.contains("mCurrentFocus")
+        || line.contains("mFocusedApp")
+        || line.contains("ResumedActivity");
+    if !matches_focus {
+        return None;
+    }
+    let start = line.find('{')?;
+    let sub = &line[start..];
+    sub.split_whitespace().find_map(extract_package_from_token)
+}
+
 #[must_use]
 pub fn parse_focused_package(window_dump: &str) -> Option<String> {
-    for line in window_dump.lines() {
-        if line.contains("mCurrentFocus")
-            || line.contains("mFocusedApp")
-            || line.contains("ResumedActivity")
-        {
-            if let Some(start) = line.find('{') {
-                let sub = &line[start..];
-                for token in sub.split_whitespace() {
-                    if token.contains('/') {
-                        let clean = token.trim_matches(|c| c == '{' || c == '}' || c == ',');
-                        if let Some(pkg) = clean.split('/').next() {
-                            if !pkg.is_empty() && pkg.contains('.') {
-                                return Some(pkg.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    None
+    window_dump.lines().find_map(extract_package_from_line)
 }
 
 #[cfg(test)]

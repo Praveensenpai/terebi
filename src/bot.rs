@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use reqwest::blocking::Client;
 use std::cell::RefCell;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::config::TerebiConfig;
@@ -32,6 +33,8 @@ struct BotContext<'a> {
     pending_power: RefCell<Option<power::Pending>>,
     /// When the last power action actually ran.
     power_guard: RefCell<Option<Instant>>,
+    /// Background scheduler for delayed app data wipes.
+    scheduler: Arc<clear::WipeScheduler>,
 }
 
 pub fn run_bot(config: &TerebiConfig) -> Result<()> {
@@ -49,6 +52,7 @@ pub fn run_bot(config: &TerebiConfig) -> Result<()> {
         logger: RefCell::new(None),
         pending_power: RefCell::new(None),
         power_guard: RefCell::new(None),
+        scheduler: Arc::new(clear::WipeScheduler::new()),
     };
 
     // Keep Telegram's "/" menu in sync with the commands the bot actually serves.
@@ -117,6 +121,8 @@ fn handle_message(ctx: &BotContext, msg: &Message) {
         handle_kill_command(ctx, msg.chat.id, trimmed);
     } else if trimmed.starts_with("/clear") {
         clear::handle_clear_command(ctx, msg.chat.id, trimmed);
+    } else if trimmed == "/cancelwipe" {
+        clear::handle_clear_command(ctx, msg.chat.id, "/clear cancel");
     } else if trimmed == "/logs" {
         logs::send_log_tail(ctx, msg.chat.id);
     } else if trimmed.starts_with("/log") {
@@ -296,7 +302,13 @@ fn handle_callback(ctx: &BotContext, cb: CallbackQuery) {
     } else if let Some(target) = data.strip_prefix("clearask:") {
         clear::handle_clear_ask(ctx, &cb, target);
     } else if let Some(target) = data.strip_prefix("clear:") {
-        clear::handle_clear_execute(ctx, &cb, target);
+        clear::handle_clear_prompt_delay(ctx, &cb, target);
+    } else if let Some(payload) = data.strip_prefix("wipe:") {
+        clear::handle_clear_execute_delayed(ctx, &cb, payload);
+    } else if let Some(id_str) = data.strip_prefix("wipecancel:") {
+        clear::handle_wipe_cancel_id(ctx, &cb, id_str);
+    } else if data == "wipecancel" {
+        clear::handle_wipe_cancel(ctx, &cb);
     } else if data.starts_with("power:") {
         power::handle_power_callback(ctx, &cb, data);
     } else if data.starts_with("key:") {
