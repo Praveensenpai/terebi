@@ -110,8 +110,8 @@ fn handle_clear_cancel(ctx: &BotContext, chat_id: i64) {
 }
 
 fn schedule_command_wipe(ctx: &BotContext, chat_id: i64, target: &str, delay_mins: u64) {
-    let (package, name) = resolve_target(ctx, target)
-        .unwrap_or_else(|| (target.to_string(), display_name(target)));
+    let (package, name) =
+        resolve_target(ctx, target).unwrap_or_else(|| (target.to_string(), display_name(target)));
     let id = ctx.scheduler.schedule(ScheduleArgs {
         client: ctx.client.clone(),
         token: ctx.config.bot_token.clone(),
@@ -125,7 +125,13 @@ fn schedule_command_wipe(ctx: &BotContext, chat_id: i64, target: &str, delay_min
         "⏳ <b>Wipe Scheduled:</b> {name}\n📦 <code>{package}</code>\n⏱️ Clearing in <b>{delay_mins} min</b>."
     );
     let keyboard = wipe_scheduled_keyboard(id);
-    let _ = send_text(ctx.client, &ctx.config.bot_token, chat_id, &msg, Some(keyboard));
+    let _ = send_text(
+        ctx.client,
+        &ctx.config.bot_token,
+        chat_id,
+        &msg,
+        Some(keyboard),
+    );
 }
 
 pub(super) fn handle_clear_list(ctx: &BotContext, cb: &CallbackQuery, page: usize) {
@@ -288,7 +294,9 @@ fn schedule_clear(
 }
 
 pub(super) fn handle_wipe_cancel_id(ctx: &BotContext, cb: &CallbackQuery, id_str: &str) {
-    let Ok(id) = id_str.parse::<u64>() else { return };
+    let Ok(id) = id_str.parse::<u64>() else {
+        return;
+    };
     if let Some((pkg, label)) = ctx.scheduler.cancel(id) {
         let _ = answer_callback(ctx.client, &ctx.config.bot_token, &cb.id, "Wipe cancelled");
         let alert = format!("🛑 <b>Scheduled wipe cancelled</b> for {label} (<code>{pkg}</code>).");
@@ -379,7 +387,8 @@ mod tests {
 
     #[test]
     fn test_confirm_target_falls_back_to_index_when_package_overlong() {
-        let long = "com.very.long.package.name.that.definitely.exceeds.the.sixty.four.character.limit";
+        let long =
+            "com.very.long.package.name.that.definitely.exceeds.the.sixty.four.character.limit";
         assert_eq!(confirm_target("12", long), Some("12".to_string()));
     }
 }
