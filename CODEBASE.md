@@ -94,7 +94,7 @@ Entrypoint ──> CLI/Parser ──> Domain Logic ──> Infra/IO
   fn cancel_all (& self) -> Vec < (String , String) >
   ```
 
-### `src/bot/clear.rs` (Role: general, Lines: 385)
+### `src/bot/clear.rs` (Role: general, Lines: 394)
 - **Responsibility**: Core general logic in src/bot/clear.rs
 - **Imports**: use anyhow :: Result , use crate :: apps :: display_name , use crate :: bot :: api :: { answer_callback , edit_message_text , send_text , CallbackQuery } , use crate :: bot :: ui :: { cancelled_keyboard , clear_apps_keyboard , confirm_clear_keyboard , wipe_delay_keyboard , wipe_scheduled_keyboard , } , use super :: BotContext , pub use scheduler :: { ScheduleArgs , WipeScheduler } 
 
