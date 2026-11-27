@@ -4,6 +4,11 @@ use reqwest::blocking::{multipart, Client};
 use serde::Deserialize;
 use serde_json::json;
 
+/// Strip the URL (which embeds the secret bot token) from `reqwest` errors.
+fn net_err(err: reqwest::Error) -> anyhow::Error {
+    anyhow::anyhow!("{}", err.without_url())
+}
+
 #[derive(Debug, Deserialize)]
 pub struct TelegramResponse<T> {
     pub result: Option<T>,
@@ -56,8 +61,10 @@ pub fn fetch_updates(client: &Client, token: &str, offset: i64) -> Result<Vec<Up
             ("offset", offset.to_string()),
             ("timeout", "25".to_string()),
         ])
-        .send()?
-        .json()?;
+        .send()
+        .map_err(net_err)?
+        .json()
+        .map_err(net_err)?;
 
     Ok(resp.result.unwrap_or_default())
 }
@@ -69,6 +76,18 @@ pub fn send_text(
     text: &str,
     reply_markup: Option<serde_json::Value>,
 ) -> Result<()> {
+    let _ = send_text_returning_id(client, token, chat_id, text, reply_markup)?;
+    Ok(())
+}
+
+/// Send an HTML text message and return its Telegram `message_id`.
+pub fn send_text_returning_id(
+    client: &Client,
+    token: &str,
+    chat_id: i64,
+    text: &str,
+    reply_markup: Option<serde_json::Value>,
+) -> Result<i64> {
     let url = format!("https://api.telegram.org/bot{token}/sendMessage");
     let mut payload = json!({
         "chat_id": chat_id,
@@ -80,11 +99,38 @@ pub fn send_text(
         payload["reply_markup"] = markup;
     }
 
+    let resp: TelegramResponse<MessageSummary> = client
+        .post(&url)
+        .json(&payload)
+        .send()
+        .map_err(net_err)?
+        .error_for_status()
+        .map_err(net_err)?
+        .json()
+        .map_err(net_err)?;
+    Ok(resp.result.map_or(0, |m| m.message_id))
+}
+
+/// Remove the inline keyboard from an existing bot message.
+pub fn clear_inline_keyboard(
+    client: &Client,
+    token: &str,
+    chat_id: i64,
+    message_id: i64,
+) -> Result<()> {
+    let url = format!("https://api.telegram.org/bot{token}/editMessageReplyMarkup");
+    let payload = json!({
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "reply_markup": { "inline_keyboard": [] }
+    });
     client
         .post(&url)
         .json(&payload)
-        .send()?
-        .error_for_status()?;
+        .send()
+        .map_err(net_err)?
+        .error_for_status()
+        .map_err(net_err)?;
     Ok(())
 }
 
@@ -112,8 +158,10 @@ pub fn edit_message_text(
     client
         .post(&url)
         .json(&payload)
-        .send()?
-        .error_for_status()?;
+        .send()
+        .map_err(net_err)?
+        .error_for_status()
+        .map_err(net_err)?;
     Ok(())
 }
 
@@ -155,8 +203,10 @@ pub fn answer_callback(client: &Client, token: &str, cb_id: &str, text: &str) ->
     client
         .post(&url)
         .json(&payload)
-        .send()?
-        .error_for_status()?;
+        .send()
+        .map_err(net_err)?
+        .error_for_status()
+        .map_err(net_err)?;
     Ok(())
 }
 
@@ -166,8 +216,10 @@ pub fn set_my_commands(client: &Client, token: &str, commands: &serde_json::Valu
     client
         .post(&url)
         .json(&json!({ "commands": commands }))
-        .send()?
-        .error_for_status()?;
+        .send()
+        .map_err(net_err)?
+        .error_for_status()
+        .map_err(net_err)?;
     Ok(())
 }
 
@@ -192,8 +244,10 @@ pub fn send_photo(
     client
         .post(&url)
         .multipart(form)
-        .send()?
-        .error_for_status()?;
+        .send()
+        .map_err(net_err)?
+        .error_for_status()
+        .map_err(net_err)?;
     Ok(())
 }
 

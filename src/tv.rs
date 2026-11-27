@@ -53,7 +53,10 @@ impl TvController {
         let media_dump = self.adb.shell(&["dumpsys", "media_session"])?;
         let mut media = session::parse_media_session(&media_dump, Some(&package));
 
-        if media.position_ms.is_none() || media.position_ms == Some(0) {
+        if media.has_session
+            && media.is_playing
+            && (media.position_ms.is_none() || media.position_ms == Some(0))
+        {
             media.position_ms = self.audio_position_ms();
         }
 
@@ -83,14 +86,8 @@ impl TvController {
     }
 
     pub fn force_stop(&self, query: &str) -> Result<(String, String)> {
-        let pkg = media::resolve_package(query).unwrap_or_else(|| query.to_string());
-
-        let (name, _) = get_app_display(&pkg);
-        let app_label = if name == "App" {
-            pkg.clone()
-        } else {
-            name.to_string()
-        };
+        let pkg = resolve_valid_package(query)?;
+        let app_label = app_label_for(&pkg);
 
         let _ = self.adb.shell(&["am", "force-stop", &pkg])?;
         let _ = self.adb.shell(&["input", "keyevent", "KEYCODE_HOME"])?;
@@ -99,27 +96,60 @@ impl TvController {
     }
 
     pub fn clear_app_data(&self, query: &str) -> Result<(String, String)> {
-        let pkg = media::resolve_package(query).unwrap_or_else(|| query.to_string());
-
-        let (name, _) = get_app_display(&pkg);
-        let app_label = if name == "App" {
-            pkg.clone()
-        } else {
-            name.to_string()
-        };
+        let pkg = resolve_valid_package(query)?;
+        let app_label = app_label_for(&pkg);
 
         let out = self.adb.shell(&["pm", "clear", &pkg])?;
-        if !out.contains("Success") {
-            anyhow::bail!("Failed to clear data for {pkg}: {out}");
+        if !out.contains("Success") && !self.clear_for_installed_users(&pkg) {
+            anyhow::bail!("Failed to clear data for {pkg}: {}", out.trim());
         }
         let _ = self.adb.shell(&["input", "keyevent", "KEYCODE_HOME"])?;
 
         Ok((pkg, app_label))
     }
 
+    fn clear_for_installed_users(&self, pkg: &str) -> bool {
+        let users = self
+            .adb
+            .shell(&["dumpsys", "package", pkg])
+            .map_or_default(|d| crate::apps::parse_installed_users(&d));
+        let mut cleared = false;
+        for uid in users {
+            let uid_str = uid.to_string();
+            if self
+                .adb
+                .shell(&["pm", "clear", "--user", &uid_str, pkg])
+                .is_ok_and(|res| res.contains("Success"))
+            {
+                cleared = true;
+            }
+        }
+        cleared
+    }
+
     pub fn list_apps(&self) -> Result<Vec<String>> {
         let output = self.adb.shell(&["pm", "list", "packages", "-3"])?;
-        let apps = crate::apps::parse_package_list(&output);
+        let mut apps = crate::apps::parse_package_list(&output);
+
+        for category in [
+            "android.intent.category.LEANBACK_LAUNCHER",
+            "android.intent.category.LAUNCHER",
+        ] {
+            if let Ok(dump) = self.adb.shell(&[
+                "cmd",
+                "package",
+                "query-activities",
+                "--brief",
+                "-a",
+                "android.intent.action.MAIN",
+                "-c",
+                category,
+            ]) {
+                let launchable = crate::apps::parse_launchable_packages(&dump);
+                apps = crate::apps::merge_package_lists(apps, launchable);
+            }
+        }
+
         let usage = self
             .adb
             .shell(&["dumpsys", "usagestats"])
@@ -154,30 +184,32 @@ impl TvController {
         Ok(PowerOutcome::Rebooted)
     }
 
-    /// Shut the TV down, falling back to the power key (sleep) when the
-    /// firmware refuses an unprivileged `reboot -p`.
+    /// Shut the TV down, falling back to `KEYCODE_SLEEP` when the firmware
+    /// refuses an unprivileged `reboot -p` while ADB is connected.
     pub fn power_off(&self) -> Result<PowerOutcome> {
-        if self.adb.reboot(true).is_ok() {
-            return Ok(PowerOutcome::PoweredOff);
+        match self.adb.reboot(true) {
+            Ok(()) => Ok(PowerOutcome::PoweredOff),
+            Err(err) => {
+                if !self.adb.is_connected() {
+                    return Err(err);
+                }
+                self.adb.shell(&["input", "keyevent", "KEYCODE_SLEEP"])?;
+                Ok(PowerOutcome::Sleep)
+            }
         }
-        self.adb.shell(&["input", "keyevent", "KEYCODE_POWER"])?;
-        Ok(PowerOutcome::Sleep)
     }
 
     pub fn send_key(&self, keycode: &str) -> Result<()> {
+        if !media::is_valid_keycode(keycode) {
+            anyhow::bail!("Invalid Android keycode: {keycode}");
+        }
         let _ = self.adb.shell(&["input", "keyevent", keycode])?;
         Ok(())
     }
 
     pub fn launch_app(&self, query: &str) -> Result<String> {
-        let pkg = media::resolve_package(query).unwrap_or_else(|| query.to_string());
-
-        let (name, _) = get_app_display(&pkg);
-        let app_label = if name == "App" {
-            pkg.clone()
-        } else {
-            name.to_string()
-        };
+        let pkg = resolve_valid_package(query)?;
+        let app_label = app_label_for(&pkg);
 
         let _ = self.adb.shell(&[
             "monkey",
@@ -189,6 +221,24 @@ impl TvController {
         ])?;
 
         Ok(app_label)
+    }
+}
+
+fn resolve_valid_package(query: &str) -> Result<String> {
+    let pkg = media::resolve_package(query)
+        .ok_or_else(|| anyhow::anyhow!("Unknown or invalid package name: {query}"))?;
+    if !media::is_valid_package_id(&pkg) {
+        anyhow::bail!("Invalid Android package ID: {pkg}");
+    }
+    Ok(pkg)
+}
+
+fn app_label_for(pkg: &str) -> String {
+    let (name, _) = get_app_display(pkg);
+    if name == "App" {
+        pkg.to_string()
+    } else {
+        name.to_string()
     }
 }
 

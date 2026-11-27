@@ -8,6 +8,7 @@ use crate::config::TerebiConfig;
 use crate::input_log::InputLogger;
 use crate::tv::TvController;
 
+mod actions;
 mod api;
 mod clear;
 mod commands;
@@ -15,11 +16,12 @@ mod logs;
 mod power;
 mod ui;
 
+use actions::{handle_kill_callback, handle_kill_command, handle_open_command, send_remote_menu};
 use api::{
     answer_callback, escape_html, fetch_updates, send_photo, send_text, set_my_commands,
     CallbackQuery, Message, User,
 };
-use ui::{format_status_card, kill_keyboard, remote_keyboard, status_keyboard, PowerAction};
+use ui::{format_status_card, status_keyboard, PowerAction};
 
 struct BotContext<'a> {
     client: &'a Client,
@@ -55,21 +57,8 @@ pub fn run_bot(config: &TerebiConfig) -> Result<()> {
         scheduler: Arc::new(clear::WipeScheduler::new()),
     };
 
-    // Keep Telegram's "/" menu in sync with the commands the bot actually serves.
-    if let Err(e) = set_my_commands(&client, &config.bot_token, &commands::command_menu()) {
-        println!("  ⚠️ Failed to register command menu: {e}");
-    }
-
-    if config.logging.enabled {
-        let dir = config.logging.path();
-        match InputLogger::start(&tv.adb, &dir) {
-            Ok(logger) => {
-                *ctx.logger.borrow_mut() = Some(logger);
-                println!("  🗒 Key capture active → {}", dir.display());
-            }
-            Err(e) => println!("  ⚠️ Key capture failed to start: {e}"),
-        }
-    }
+    let mut menu_registered = register_command_menu(&client, &config.bot_token);
+    start_input_logger(&ctx);
 
     println!(
         "  ⚡ Terebi Telegram Bot started (Authorized chat: {})...",
@@ -83,26 +72,56 @@ pub fn run_bot(config: &TerebiConfig) -> Result<()> {
             continue;
         };
 
+        if !menu_registered {
+            menu_registered =
+                set_my_commands(ctx.client, &config.bot_token, &commands::command_menu()).is_ok();
+        }
+
         for u in updates {
             offset = u.id + 1;
             if let Some(msg) = u.message {
                 handle_message(&ctx, &msg);
             } else if let Some(cb) = u.callback_query {
-                handle_callback(&ctx, cb);
+                handle_callback(&ctx, &cb);
             }
         }
     }
 }
 
-fn is_authorized(user_id: Option<&User>, chat_id: &str) -> bool {
-    let Ok(auth_id) = chat_id.parse::<i64>() else {
+fn register_command_menu(client: &Client, token: &str) -> bool {
+    let ok = set_my_commands(client, token, &commands::command_menu()).is_ok();
+    if !ok {
+        println!("  ⚠️ Command menu registration deferred (will retry when online)");
+    }
+    ok
+}
+
+fn start_input_logger(ctx: &BotContext) {
+    if !ctx.config.logging.enabled {
+        return;
+    }
+    let dir = ctx.config.logging.path();
+    match InputLogger::start(&ctx.tv.adb, &dir) {
+        Ok(logger) => {
+            *ctx.logger.borrow_mut() = Some(logger);
+            println!("  🗒 Key capture active → {}", dir.display());
+        }
+        Err(e) => println!("  ⚠️ Key capture failed to start: {e}"),
+    }
+}
+
+fn is_authorized(user_id: Option<&User>, chat_id: Option<i64>, authorized_id: &str) -> bool {
+    let Ok(auth_id) = authorized_id.parse::<i64>() else {
         return false;
     };
-    user_id.is_some_and(|u| u.id == auth_id)
+    if auth_id < 0 {
+        return chat_id == Some(auth_id);
+    }
+    user_id.is_some_and(|u| u.id == auth_id) && chat_id.is_none_or(|c| c == auth_id)
 }
 
 fn handle_message(ctx: &BotContext, msg: &Message) {
-    if !is_authorized(msg.from.as_ref(), &ctx.config.chat_id) {
+    if !is_authorized(msg.from.as_ref(), Some(msg.chat.id), &ctx.config.chat_id) {
         return;
     }
 
@@ -151,7 +170,10 @@ fn send_status(ctx: &BotContext, chat_id: i64) {
                 ctx.client,
                 &ctx.config.bot_token,
                 chat_id,
-                &format!("⚠️ Failed to read TV status: {e}"),
+                &format!(
+                    "⚠️ Failed to read TV status: {}",
+                    escape_html(&e.to_string())
+                ),
                 None,
             );
             return;
@@ -208,82 +230,18 @@ fn send_screenshot(ctx: &BotContext, chat_id: i64) {
             ctx.client,
             &ctx.config.bot_token,
             chat_id,
-            &format!("⚠️ Failed to send screenshot: {e}"),
+            &format!(
+                "⚠️ Failed to send screenshot: {}",
+                escape_html(&e.to_string())
+            ),
             None,
         );
     }
 }
 
-fn handle_kill_command(ctx: &BotContext, chat_id: i64, input: &str) {
-    let parts: Vec<&str> = input.split_whitespace().collect();
-    if parts.len() > 1 {
-        let target = parts[1];
-        match ctx.tv.force_stop(target) {
-            Ok((pkg, name)) => {
-                let msg = format!(
-                    "🛑 <b>Force-Stopped:</b> {name}\n📦 <code>{pkg}</code>\n🏠 Returned to Home."
-                );
-                let _ = send_text(ctx.client, &ctx.config.bot_token, chat_id, &msg, None);
-            }
-            Err(e) => {
-                let _ = send_text(
-                    ctx.client,
-                    &ctx.config.bot_token,
-                    chat_id,
-                    &format!("⚠️ Failed to kill {target}: {e}"),
-                    None,
-                );
-            }
-        }
-    } else {
-        send_kill_menu(ctx, chat_id);
-    }
-}
-
-fn send_kill_menu(ctx: &BotContext, chat_id: i64) {
-    let text = "🛑 <b>App Murderer — Select App to Kill:</b>";
-    let keyboard = kill_keyboard();
-    let _ = send_text(
-        ctx.client,
-        &ctx.config.bot_token,
-        chat_id,
-        text,
-        Some(keyboard),
-    );
-}
-
-fn send_remote_menu(ctx: &BotContext, chat_id: i64) {
-    let text = "🎮 <b>Terebi Virtual Remote Control:</b>";
-    let keyboard = remote_keyboard();
-    let _ = send_text(
-        ctx.client,
-        &ctx.config.bot_token,
-        chat_id,
-        text,
-        Some(keyboard),
-    );
-}
-
-fn handle_open_command(ctx: &BotContext, chat_id: i64, app: &str) {
-    match ctx.tv.launch_app(app) {
-        Ok(name) => {
-            let msg = format!("🚀 <b>Launched:</b> {name} on {}", ctx.config.friendly_name);
-            let _ = send_text(ctx.client, &ctx.config.bot_token, chat_id, &msg, None);
-        }
-        Err(e) => {
-            let _ = send_text(
-                ctx.client,
-                &ctx.config.bot_token,
-                chat_id,
-                &format!("⚠️ Failed to launch {app}: {e}"),
-                None,
-            );
-        }
-    }
-}
-
-fn handle_callback(ctx: &BotContext, cb: CallbackQuery) {
-    if !is_authorized(Some(&cb.from), &ctx.config.chat_id) {
+fn handle_callback(ctx: &BotContext, cb: &CallbackQuery) {
+    let chat_id = cb.message.as_ref().map(|m| m.chat.id);
+    if !is_authorized(Some(&cb.from), chat_id, &ctx.config.chat_id) {
         return;
     }
 
@@ -293,73 +251,50 @@ fn handle_callback(ctx: &BotContext, cb: CallbackQuery) {
         return;
     }
 
-    if data.starts_with("kill:") {
-        handle_kill_callback(ctx, &cb, data.trim_start_matches("kill:"));
+    if let Some(target) = data.strip_prefix("kill:") {
+        handle_kill_callback(ctx, cb, target);
     } else if data == "clearrefresh" {
-        clear::handle_clear_refresh(ctx, &cb);
+        clear::handle_clear_refresh(ctx, cb);
     } else if let Some(page) = data.strip_prefix("clearlist:") {
-        clear::handle_clear_list(ctx, &cb, page.parse().unwrap_or(0));
-    } else if let Some(target) = data.strip_prefix("clearask:") {
-        clear::handle_clear_ask(ctx, &cb, target);
-    } else if let Some(target) = data.strip_prefix("clear:") {
-        clear::handle_clear_prompt_delay(ctx, &cb, target);
+        clear::handle_clear_list(ctx, cb, page.parse().unwrap_or(0));
+    } else if let Some(target) = data
+        .strip_prefix("clearask:")
+        .or_else(|| data.strip_prefix("clear:"))
+    {
+        clear::handle_clear_ask(ctx, cb, target);
     } else if let Some(payload) = data.strip_prefix("wipe:") {
-        clear::handle_clear_execute_delayed(ctx, &cb, payload);
+        clear::handle_clear_execute_delayed(ctx, cb, payload);
     } else if let Some(id_str) = data.strip_prefix("wipecancel:") {
-        clear::handle_wipe_cancel_id(ctx, &cb, id_str);
+        clear::handle_wipe_cancel_id(ctx, cb, id_str);
     } else if data == "wipecancel" {
-        clear::handle_wipe_cancel(ctx, &cb);
+        clear::handle_wipe_cancel(ctx, cb);
     } else if data.starts_with("power:") {
-        power::handle_power_callback(ctx, &cb, data);
-    } else if data.starts_with("key:") {
-        let key = data.trim_start_matches("key:");
-        let _ = ctx.tv.send_key(key);
-        let _ = answer_callback(ctx.client, &ctx.config.bot_token, &cb.id, "Key sent");
-    } else if data == "cmd:screen" {
-        let _ = answer_callback(
-            ctx.client,
-            &ctx.config.bot_token,
-            &cb.id,
-            "Capturing screen...",
-        );
-        if let Some(msg) = cb.message {
-            send_screenshot(ctx, msg.chat.id);
-        }
-    } else if data == "cmd:status" {
-        let _ = answer_callback(ctx.client, &ctx.config.bot_token, &cb.id, "Refreshed");
-        if let Some(msg) = cb.message {
-            send_status(ctx, msg.chat.id);
-        }
-    } else if data == "cmd:remote" {
-        let _ = answer_callback(ctx.client, &ctx.config.bot_token, &cb.id, "Opening remote");
-        if let Some(msg) = cb.message {
-            send_remote_menu(ctx, msg.chat.id);
-        }
+        power::handle_power_callback(ctx, cb, data);
+    } else if let Some(key) = data.strip_prefix("key:") {
+        let toast = if ctx.tv.send_key(key).is_ok() {
+            "Key sent"
+        } else {
+            "Failed to send key"
+        };
+        let _ = answer_callback(ctx.client, &ctx.config.bot_token, &cb.id, toast);
+    } else if let Some(cmd) = data.strip_prefix("cmd:") {
+        handle_cmd_callback(ctx, cb, cmd);
     }
 }
 
-fn handle_kill_callback(ctx: &BotContext, cb: &CallbackQuery, target: &str) {
-    let kill_target = if target == "current" {
-        ctx.tv.get_status().map_or_else(
-            |_| "com.google.android.youtube.tv".to_string(),
-            |s| s.package,
-        )
-    } else {
-        target.to_string()
+fn handle_cmd_callback(ctx: &BotContext, cb: &CallbackQuery, cmd: &str) {
+    let toast = match cmd {
+        "screen" => "Capturing screen...",
+        "status" => "Refreshed",
+        "remote" => "Opening remote",
+        _ => return,
     };
-
-    if let Ok((pkg, name)) = ctx.tv.force_stop(&kill_target) {
-        let _ = answer_callback(
-            ctx.client,
-            &ctx.config.bot_token,
-            &cb.id,
-            &format!("Terminated {name}!"),
-        );
-        if let Some(ref msg) = cb.message {
-            let alert = format!(
-                "🛑 <b>App Terminated:</b> {name}\n📦 <code>{pkg}</code>\n🏠 Returned to Home."
-            );
-            let _ = send_text(ctx.client, &ctx.config.bot_token, msg.chat.id, &alert, None);
-        }
+    let _ = answer_callback(ctx.client, &ctx.config.bot_token, &cb.id, toast);
+    let Some(ref msg) = cb.message else { return };
+    match cmd {
+        "screen" => send_screenshot(ctx, msg.chat.id),
+        "status" => send_status(ctx, msg.chat.id),
+        "remote" => send_remote_menu(ctx, msg.chat.id),
+        _ => {}
     }
 }

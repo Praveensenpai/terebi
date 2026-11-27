@@ -7,7 +7,9 @@
 
 use std::time::{Duration, Instant};
 
-use crate::bot::api::{answer_callback, edit_message_text, send_text, CallbackQuery, Message};
+use crate::bot::api::{
+    answer_callback, edit_message_text, escape_html, send_text, CallbackQuery, Message,
+};
 use crate::bot::ui::{cancelled_keyboard, power_keyboard, PowerAction};
 use crate::tv::PowerOutcome;
 
@@ -70,27 +72,9 @@ pub(super) fn handle_power_command(ctx: &BotContext, msg: &Message, action: Powe
 
 /// Handle `power:confirm:*` and `power:cancel` button taps.
 pub(super) fn handle_power_callback(ctx: &BotContext, cb: &CallbackQuery, data: &str) {
-    let Some(pending) = ctx.pending_power.borrow_mut().take() else {
-        let _ = answer_callback(
-            ctx.client,
-            &ctx.config.bot_token,
-            &cb.id,
-            "No pending request — send the command again",
-        );
+    let Some(pending) = take_authorized_pending(ctx, cb) else {
         return;
     };
-
-    if cb.from.id != pending.user_id {
-        let _ = answer_callback(
-            ctx.client,
-            &ctx.config.bot_token,
-            &cb.id,
-            "Only the requester can answer this",
-        );
-        // Keep the request alive for its real owner.
-        *ctx.pending_power.borrow_mut() = Some(pending);
-        return;
-    }
 
     if data == "power:cancel" {
         let _ = answer_callback(ctx.client, &ctx.config.bot_token, &cb.id, "Cancelled");
@@ -108,6 +92,17 @@ pub(super) fn handle_power_callback(ctx: &BotContext, cb: &CallbackQuery, data: 
         return;
     }
 
+    if data != pending.action.callback() {
+        let _ = answer_callback(
+            ctx.client,
+            &ctx.config.bot_token,
+            &cb.id,
+            "Card superseded by a newer request",
+        );
+        *ctx.pending_power.borrow_mut() = Some(pending);
+        return;
+    }
+
     if let Some(wait) = cooldown_remaining(ctx) {
         let _ = answer_callback(
             ctx.client,
@@ -118,8 +113,30 @@ pub(super) fn handle_power_callback(ctx: &BotContext, cb: &CallbackQuery, data: 
         return;
     }
 
-    *ctx.power_guard.borrow_mut() = Some(Instant::now());
     execute(ctx, cb, pending.action);
+}
+
+fn take_authorized_pending(ctx: &BotContext, cb: &CallbackQuery) -> Option<Pending> {
+    let Some(pending) = ctx.pending_power.borrow_mut().take() else {
+        let _ = answer_callback(
+            ctx.client,
+            &ctx.config.bot_token,
+            &cb.id,
+            "No pending request — send the command again",
+        );
+        return None;
+    };
+    if cb.from.id != pending.user_id {
+        let _ = answer_callback(
+            ctx.client,
+            &ctx.config.bot_token,
+            &cb.id,
+            "Only the requester can answer this",
+        );
+        *ctx.pending_power.borrow_mut() = Some(pending);
+        return None;
+    }
+    Some(pending)
 }
 
 fn execute(ctx: &BotContext, cb: &CallbackQuery, action: PowerAction) {
@@ -129,21 +146,34 @@ fn execute(ctx: &BotContext, cb: &CallbackQuery, action: PowerAction) {
     };
 
     let (toast, body) = match result {
-        Ok(PowerOutcome::Rebooted) => (
-            "Reboot sent",
-            "🔄 <b>Reboot sent.</b>\nThe TV drops off ADB until it finishes booting.",
-        ),
-        Ok(PowerOutcome::PoweredOff) => (
-            "Power off sent",
-            "🌙 <b>Power off sent.</b>\nThe TV is shutting down.",
-        ),
-        Ok(PowerOutcome::Sleep) => (
-            "Shutdown refused — sleep sent",
-            "🌙 <b>Shutdown refused by the TV.</b>\nSent the power key instead, so the TV went to sleep.",
-        ),
+        Ok(PowerOutcome::Rebooted) => {
+            *ctx.power_guard.borrow_mut() = Some(Instant::now());
+            (
+                "Reboot sent",
+                "🔄 <b>Reboot sent.</b>\nThe TV drops off ADB until it finishes booting.",
+            )
+        }
+        Ok(PowerOutcome::PoweredOff) => {
+            *ctx.power_guard.borrow_mut() = Some(Instant::now());
+            (
+                "Power off sent",
+                "🌙 <b>Power off sent.</b>\nThe TV is shutting down.",
+            )
+        }
+        Ok(PowerOutcome::Sleep) => {
+            *ctx.power_guard.borrow_mut() = Some(Instant::now());
+            (
+                "Shutdown refused — sleep sent",
+                "🌙 <b>Shutdown refused by the TV.</b>\nSent the sleep key instead.",
+            )
+        }
         Err(e) => {
             let _ = answer_callback(ctx.client, &ctx.config.bot_token, &cb.id, "Command failed");
-            let text = format!("⚠️ <b>{} failed:</b> {e}", action.title());
+            let text = format!(
+                "⚠️ <b>{} failed:</b> {}",
+                action.title(),
+                escape_html(&e.to_string())
+            );
             replace_card(ctx, cb, &text);
             return;
         }

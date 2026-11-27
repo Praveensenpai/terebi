@@ -56,7 +56,7 @@ const COMMANDS: &[CommandSpec] = &[
     cmd(
         "clear",
         " [app] [m]",
-        "Erase app data immediately or after 1, 2, 5 min delay",
+        "Erase app data now or after 5m, 15m, 30m, 1h delay",
         "🧹",
     ),
     cmd(

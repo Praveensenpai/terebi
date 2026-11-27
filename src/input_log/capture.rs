@@ -79,8 +79,10 @@ pub struct InputLogger {
 
 impl InputLogger {
     /// Start supervised `adb logcat` capture into `dir`.
+    ///
+    /// Does not require the TV to be reachable at startup; the supervisor thread
+    /// connects and reconnects automatically whenever the TV is online.
     pub fn start(adb: &AdbDevice, dir: &Path) -> Result<Self> {
-        adb.ensure_connected()?;
         fs::create_dir_all(dir).with_context(|| format!("Failed to create {}", dir.display()))?;
 
         let shared = Arc::new(Shared {

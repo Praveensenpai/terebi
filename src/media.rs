@@ -1,111 +1,27 @@
-pub struct AppInfo {
-    pub name: &'static str,
-    pub package: &'static str,
-    pub icon: &'static str,
+mod catalog;
+pub use catalog::KNOWN_APPS;
+
+/// Validate an Android package identifier so it is safe to pass to `adb shell`.
+#[must_use]
+pub fn is_valid_package_id(package: &str) -> bool {
+    if package.is_empty() || package.len() > 128 || !package.contains('.') {
+        return false;
+    }
+    package
+        .split('.')
+        .all(|seg| !seg.is_empty() && seg.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
 }
 
-pub const KNOWN_APPS: &[AppInfo] = &[
-    AppInfo {
-        name: "YouTube",
-        package: "com.google.android.youtube.tv",
-        icon: "📺",
-    },
-    AppInfo {
-        name: "YouTube (Cobalt)",
-        package: "io.gh.reisxd.tizentube.cobalt",
-        icon: "📺",
-    },
-    AppInfo {
-        name: "SmartTube",
-        package: "org.smarttube.stable",
-        icon: "📺",
-    },
-    AppInfo {
-        name: "SmartTube (Beta)",
-        package: "org.smarttube.beta",
-        icon: "📺",
-    },
-    AppInfo {
-        name: "SmartTube",
-        package: "com.teamsmart.videomanager.tv",
-        icon: "📺",
-    },
-    AppInfo {
-        name: "FLauncher",
-        package: "me.efesser.flauncher",
-        icon: "🏠",
-    },
-    AppInfo {
-        name: "Netflix",
-        package: "com.netflix.ninja",
-        icon: "🍿",
-    },
-    AppInfo {
-        name: "Prime Video",
-        package: "com.amazon.amazonvideo.livingroom",
-        icon: "🎬",
-    },
-    AppInfo {
-        name: "Disney+",
-        package: "com.disney.disneyplus",
-        icon: "🏰",
-    },
-    AppInfo {
-        name: "Disney+ Hotstar",
-        package: "in.startv.hotstar",
-        icon: "🏰",
-    },
-    AppInfo {
-        name: "Stremio",
-        package: "com.frolo.stremio",
-        icon: "🎥",
-    },
-    AppInfo {
-        name: "Stremio",
-        package: "com.stremio.one",
-        icon: "🎥",
-    },
-    AppInfo {
-        name: "VLC Player",
-        package: "org.videolan.vlc",
-        icon: "📼",
-    },
-    AppInfo {
-        name: "Jellyfin TV",
-        package: "org.jellyfin.androidtv",
-        icon: "🍿",
-    },
-    AppInfo {
-        name: "Plex",
-        package: "com.plexapp.android",
-        icon: "🍿",
-    },
-    AppInfo {
-        name: "Spotify",
-        package: "com.spotify.tv.android",
-        icon: "🎵",
-    },
-    AppInfo {
-        name: "Twitch",
-        package: "tv.twitch.android.app",
-        icon: "🟣",
-    },
-    AppInfo {
-        name: "Kodi",
-        package: "org.xbmc.kodi",
-        icon: "📦",
-    },
-    AppInfo {
-        name: "TV Home",
-        package: "com.google.android.tvlauncher",
-        icon: "🏠",
-    },
-    AppInfo {
-        name: "Google TV",
-        package: "com.google.android.apps.tv.launcherx",
-        icon: "🏠",
-    },
-];
+/// Validate an Android `KEYCODE_*` constant before passing to `input keyevent`.
+#[must_use]
+pub fn is_valid_keycode(keycode: &str) -> bool {
+    keycode.strip_prefix("KEYCODE_").is_some_and(|rest| {
+        !rest.is_empty()
+            && rest
+                .bytes()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+    })
+}
 
 #[must_use]
 pub fn get_app_display(package: &str) -> (&'static str, &'static str) {
@@ -119,46 +35,47 @@ pub fn get_app_display(package: &str) -> (&'static str, &'static str) {
 
 #[must_use]
 pub fn resolve_package(input: &str) -> Option<String> {
-    let lower = input.to_lowercase();
-    if lower == "yt" || lower == "youtube" {
-        return Some("com.google.android.youtube.tv".to_string());
-    }
-    if lower == "cobalt" || lower == "tizentube" {
-        return Some("io.gh.reisxd.tizentube.cobalt".to_string());
-    }
-    if lower == "smarttube" || lower == "st" {
-        return Some("org.smarttube.stable".to_string());
-    }
-    if lower == "netflix" {
-        return Some("com.netflix.ninja".to_string());
-    }
-    if lower == "prime" || lower == "amazon" {
-        return Some("com.amazon.amazonvideo.livingroom".to_string());
-    }
-    if lower == "stremio" {
-        return Some("com.frolo.stremio".to_string());
-    }
-    if lower == "vlc" {
-        return Some("org.videolan.vlc".to_string());
-    }
-    if lower == "jellyfin" {
-        return Some("org.jellyfin.androidtv".to_string());
-    }
-    if lower == "hotstar" || lower == "disneyhotstar" {
-        return Some("in.startv.hotstar".to_string());
+    let lower = input.trim().to_lowercase();
+    let alias = match lower.as_str() {
+        "yt" | "youtube" => Some("com.google.android.youtube.tv"),
+        "cobalt" | "tizentube" => Some("io.gh.reisxd.tizentube.cobalt"),
+        "smarttube" | "st" => Some("org.smarttube.stable"),
+        "netflix" => Some("com.netflix.ninja"),
+        "prime" | "amazon" => Some("com.amazon.amazonvideo.livingroom"),
+        "stremio" => Some("com.frolo.stremio"),
+        "vlc" => Some("org.videolan.vlc"),
+        "jellyfin" => Some("org.jellyfin.androidtv"),
+        "hotstar" | "disneyhotstar" => Some("in.startv.hotstar"),
+        "playstore" | "play" => Some("com.android.vending"),
+        "miru" => Some("dev.praveensenpai.miru"),
+        "libretube" => Some("com.github.libretube.debug"),
+        "findroid" => Some("dev.jdtech.jellyfin"),
+        "fdroid" => Some("org.fdroid.fdroid"),
+        "tailscale" => Some("com.tailscale.ipn"),
+        "termux" => Some("com.termux"),
+        "moonlight" => Some("com.limelight"),
+        "crunchyroll" => Some("com.crunchyroll.crunchyroid"),
+        _ => None,
+    };
+    if let Some(pkg) = alias {
+        return Some(pkg.to_string());
     }
 
     for app in KNOWN_APPS {
-        if app.name.to_lowercase().contains(&lower) || app.package.contains(&lower) {
+        if app.name.eq_ignore_ascii_case(&lower) || app.package.eq_ignore_ascii_case(&lower) {
             return Some(app.package.to_string());
         }
     }
 
-    if input.contains('.') {
-        Some(input.to_string())
-    } else {
-        None
+    if lower.len() >= 4 {
+        for app in KNOWN_APPS {
+            if app.name.to_lowercase().starts_with(&lower) {
+                return Some(app.package.to_string());
+            }
+        }
     }
+
+    is_valid_package_id(input.trim()).then(|| input.trim().to_string())
 }
 
 fn extract_package_from_token(token: &str) -> Option<String> {
@@ -229,6 +146,20 @@ mod tests {
         assert_eq!(
             parse_focused_package(dump),
             Some("com.google.android.youtube.tv".to_string())
+        );
+    }
+
+    #[test]
+    fn test_package_and_keycode_validation() {
+        assert!(is_valid_package_id("dev.praveensenpai.miru"));
+        assert!(!is_valid_package_id("com.foo;rm -rf /"));
+        assert!(!is_valid_package_id("nodot"));
+        assert!(is_valid_keycode("KEYCODE_DPAD_UP"));
+        assert!(!is_valid_keycode("KEYCODE_HOME;id"));
+        assert_eq!(resolve_package("app"), None);
+        assert_eq!(
+            resolve_package("miru"),
+            Some("dev.praveensenpai.miru".to_string())
         );
     }
 }

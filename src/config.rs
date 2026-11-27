@@ -107,9 +107,13 @@ impl TerebiConfig {
             let backup = path.with_extension("json.bak");
             fs::copy(&path, &backup)
                 .with_context(|| format!("Failed to back up {}", path.display()))?;
+            restrict_permissions(&backup);
         }
         let data = serde_json::to_string_pretty(self)?;
-        fs::write(&path, data)?;
+        let tmp_path = path.with_extension("json.tmp");
+        fs::write(&tmp_path, data)?;
+        restrict_permissions(&tmp_path);
+        fs::rename(&tmp_path, &path)?;
         Ok(())
     }
 
@@ -164,6 +168,15 @@ impl TerebiConfig {
         Ok(config)
     }
 }
+
+#[cfg(unix)]
+fn restrict_permissions(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+}
+
+#[cfg(not(unix))]
+fn restrict_permissions(_path: &Path) {}
 
 #[cfg(test)]
 mod tests {

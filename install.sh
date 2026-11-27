@@ -91,7 +91,7 @@ download_release() {
 
     local api_url="https://api.github.com/repos/${REPO}/releases/latest"
     local download_url
-    download_url="$(curl -fsSL "${api_url}" | grep "browser_download_url.*${TARGET}.tar.gz" | cut -d : -f 2,3 | tr -d ' "')"
+    download_url="$(curl -fsSL "${api_url}" | grep "browser_download_url.*${TARGET}.tar.gz" | cut -d : -f 2,3 | tr -d ' "' || true)"
 
     if [[ -z "${download_url}" ]]; then
         log_error "Could not find a pre-compiled release archive for ${TARGET}."
@@ -190,7 +190,8 @@ setup_and_start_service() {
     cat << EOF > "${SYSTEMD_USER_DIR}/terebi.service"
 [Unit]
 Description=Terebi (テレビ) Smart TV Telegram Controller & Watchdog
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple

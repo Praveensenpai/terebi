@@ -8,6 +8,19 @@ use crate::media::get_app_display;
 /// Number of apps rendered per Telegram menu page.
 pub const PAGE_SIZE: usize = 10;
 
+/// Core OS/OEM system packages that should not appear in user app-wipe pickers.
+const EXCLUDED_SYSTEM_PACKAGES: &[&str] = &[
+    "com.android.tv.settings",
+    "com.android.settings",
+    "com.android.systemui",
+    "com.google.android.gms",
+    "com.google.android.gsf",
+    "com.tcl.guard",
+    "com.tcl.suspension",
+    "com.tcl.messagebox",
+    "com.tcl.waterfall.overseas",
+];
+
 /// Parse `pm list packages` output into a sorted, deduplicated package list.
 #[must_use]
 pub fn parse_package_list(output: &str) -> Vec<String> {
@@ -21,6 +34,64 @@ pub fn parse_package_list(output: &str) -> Vec<String> {
     packages.sort_unstable();
     packages.dedup();
     packages
+}
+
+/// Extract launchable user-facing packages from `cmd package query-activities --brief` output.
+#[must_use]
+pub fn parse_launchable_packages(output: &str) -> Vec<String> {
+    let mut packages = Vec::new();
+    for line in output.lines() {
+        let trimmed = line.trim();
+        let Some((pkg, activity)) = trimmed.split_once('/') else {
+            continue;
+        };
+        if activity.is_empty()
+            || !crate::media::is_valid_package_id(pkg)
+            || EXCLUDED_SYSTEM_PACKAGES.contains(&pkg)
+        {
+            continue;
+        }
+        packages.push(pkg.to_string());
+    }
+    packages.sort_unstable();
+    packages.dedup();
+    packages
+}
+
+/// Merge third-party packages and launchable system/preinstalled apps without duplicates.
+#[must_use]
+pub fn merge_package_lists(mut base: Vec<String>, extra: Vec<String>) -> Vec<String> {
+    base.extend(extra);
+    base.sort_unstable();
+    base.dedup();
+    packages_dedup_sorted(base)
+}
+
+fn packages_dedup_sorted(mut packages: Vec<String>) -> Vec<String> {
+    packages.sort_unstable();
+    packages.dedup();
+    packages
+}
+
+/// Parse `dumpsys package <pkg>` to find Android user IDs where `installed=true`.
+#[must_use]
+pub fn parse_installed_users(dumpsys: &str) -> Vec<u32> {
+    let mut users = Vec::new();
+    for line in dumpsys.lines() {
+        let trimmed = line.trim();
+        let Some(rest) = trimmed.strip_prefix("User ") else {
+            continue;
+        };
+        let Some((id_str, attrs)) = rest.split_once(':') else {
+            continue;
+        };
+        if attrs.contains("installed=true") {
+            if let Ok(uid) = id_str.trim().parse::<u32>() {
+                users.push(uid);
+            }
+        }
+    }
+    users
 }
 
 /// Number of pages needed for `total` items, never less than one.
@@ -150,6 +221,33 @@ mod tests {
             vec!["com.netflix.ninja", "org.smarttube.stable"]
         );
         assert_eq!(parse_package_list(""), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_parse_launchable_packages_filters_system_and_keeps_streaming() {
+        let dump = "\
+  Activity #0:
+    com.android.tv.settings/.MainSettings
+  Activity #1:
+    com.netflix.ninja/.MainActivity
+  Activity #2:
+    com.amazon.amazonvideo.livingroom/com.amazon.ignition.IgnitionActivity
+  Activity #3:
+    com.tcl.guard/.StartActivity
+";
+        assert_eq!(
+            parse_launchable_packages(dump),
+            vec!["com.amazon.amazonvideo.livingroom", "com.netflix.ninja"]
+        );
+    }
+
+    #[test]
+    fn test_parse_installed_users() {
+        let dump = "\
+    User 0: ceDataInode=0 installed=false hidden=false
+    User 10: ceDataInode=0 installed=true hidden=false
+";
+        assert_eq!(parse_installed_users(dump), vec![10]);
     }
 
     #[test]

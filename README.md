@@ -136,8 +136,9 @@ Send these commands directly to your private bot:
 | `/screen`, `/screenshot` | Take a live screenshot of the TV screen and send as a photo | — |
 | `/kill` | Open the interactive App Murderer menu | Select from Hotstar, YouTube, Netflix, Stremio, SmartTube, etc. |
 | `/kill [app]` | Force stop specific app (e.g. `/kill youtube`, `/kill netflix`, `/kill yt`) | Drops to home screen after termination |
-| `/clear` | Browse every installed app, most-used first | Paginated list with a confirm step before any wipe |
-| `/clear [app]` | Erase ALL data for an app like a fresh install: account, settings, cache (e.g. `/clear hotstar`) | Signs the app out, resets its settings, then returns to home |
+| `/clear` | Browse all user-installed & launchable TV apps, most-used first | Paginated list prompting `Instant`, `5 mins`, `15 mins`, `30 mins`, or `1 hour` |
+| `/clear [app] [delay]` | Erase app data now or schedule a delay (e.g. `/clear hotstar`, `/clear hotstar 15`, `/clear hotstar 1h`) | Prompts when to clear if omitted; supports `cancel` and `list` |
+| `/cancelwipe` | Cancel all active scheduled app data wipes | — |
 | `/logs` | Show the last 40 captured remote key presses | — |
 | `/log on` \| `/log off` | Start, stop, or check remote key capture | — |
 | `/text` | Read the text currently visible on screen (best effort) | — |
@@ -171,6 +172,7 @@ terebi kill youtube
 
 # Erase all app data like a fresh install (pm clear)
 terebi clear hotstar
+terebi clear hotstar --delay 15
 
 # Show the newest remote-key log
 terebi logs --lines 40

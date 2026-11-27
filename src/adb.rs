@@ -106,20 +106,24 @@ impl AdbDevice {
     }
 
     pub fn ensure_connected(&self) -> Result<()> {
-        if !self.is_connected() {
+        let _ = self.ensure_connected_target()?;
+        Ok(())
+    }
+
+    fn ensure_connected_target(&self) -> Result<String> {
+        let target = self.resolve_target()?;
+        if !Self::is_target_connected(&target) {
             let connected = self.connect()?;
             if !connected {
-                let target = self.resolve_target()?;
                 anyhow::bail!("Could not connect to TV at {target}");
             }
             std::thread::sleep(Duration::from_millis(300));
         }
-        Ok(())
+        Ok(target)
     }
 
     pub fn shell(&self, args: &[&str]) -> Result<String> {
-        self.ensure_connected()?;
-        let target = self.target();
+        let target = self.ensure_connected_target()?;
         let mut cmd = vec!["-s", &target, "shell"];
         cmd.extend_from_slice(args);
 
@@ -136,8 +140,7 @@ impl AdbDevice {
     /// ADB normally closes the transport while the device restarts, so a
     /// disconnect reported after the request is treated as success.
     pub fn reboot(&self, power_off: bool) -> Result<()> {
-        self.ensure_connected()?;
-        let target = self.target();
+        let target = self.ensure_connected_target()?;
         let mut args = vec!["-s", target.as_str(), "reboot"];
         if power_off {
             args.push("-p");
@@ -157,8 +160,7 @@ impl AdbDevice {
     }
 
     pub fn exec_raw(&self, args: &[&str]) -> Result<Vec<u8>> {
-        self.ensure_connected()?;
-        let target = self.target();
+        let target = self.ensure_connected_target()?;
         let mut cmd = vec!["-s", &target, "exec-out"];
         cmd.extend_from_slice(args);
 

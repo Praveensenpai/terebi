@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use crate::apps::{display_name, page_count, page_slice};
+use crate::bot::api::escape_html;
 use crate::session::format_duration;
 use crate::tv::TvStatus;
 
@@ -40,16 +41,21 @@ pub fn format_status_card(friendly_name: &str, status: &TvStatus) -> String {
         _ => String::new(),
     };
 
+    let friendly = escape_html(friendly_name);
+    let app_name = escape_html(&status.app_name);
+    let package = escape_html(&status.package);
+    let safe_track = escape_html(track);
+
     format!(
-        "📺 <b>TEREBI • {friendly_name}</b>\n\
+        "📺 <b>TEREBI • {friendly}</b>\n\
         ━━━━━━━━━━━━━━━━━━━━━━━\n\
-        🎬 <b>Foreground App:</b> {} {}\n\
-        📦 <b>Package:</b> <code>{}</code>\n\
-        🎵 <b>Media:</b> <code>{}</code>\n\
+        🎬 <b>Foreground App:</b> {app_name} {}\n\
+        📦 <b>Package:</b> <code>{package}</code>\n\
+        🎵 <b>Media:</b> <code>{safe_track}</code>\n\
         ⏱ <b>Playback:</b> {state_icon}{progress_line}\n\
         💡 <b>Screen:</b> {screen_icon}\n\
         ━━━━━━━━━━━━━━━━━━━━━━━",
-        status.app_name, status.app_icon, status.package, track
+        status.app_icon
     )
 }
 
@@ -73,7 +79,7 @@ pub fn status_keyboard(package: &str, app_name: &str) -> serde_json::Value {
     let clear_data = if fits_callback("clearask:", package) {
         format!("clearask:{package}")
     } else {
-        "clearrefresh".to_string()
+        "clearask:current".to_string()
     };
     json!({
         "inline_keyboard": [
@@ -88,7 +94,7 @@ pub fn status_keyboard(package: &str, app_name: &str) -> serde_json::Value {
 pub fn kill_keyboard() -> serde_json::Value {
     json!({
         "inline_keyboard": [
-            [btn("🛑 YouTube", "kill:com.google.android.youtube.tv"), btn("🛑 SmartTube", "kill:com.teamsmart.videomanager.tv")],
+            [btn("🛑 YouTube", "kill:com.google.android.youtube.tv"), btn("🛑 SmartTube", "kill:org.smarttube.stable")],
             [btn("🛑 Netflix", "kill:com.netflix.ninja"), btn("🛑 Stremio", "kill:com.frolo.stremio")],
             [btn("🛑 Prime Video", "kill:com.amazon.amazonvideo.livingroom"), btn("🛑 Hotstar", "kill:in.startv.hotstar")],
             [btn("🛑 Kill Current App", "kill:current"), btn("🏠 TV Home", "key:KEYCODE_HOME")]
@@ -126,27 +132,19 @@ pub fn clear_apps_keyboard(apps: &[String], page: usize) -> serde_json::Value {
     json!({ "inline_keyboard": rows })
 }
 
-/// Confirmation keyboard for a pending destructive wipe.
-#[must_use]
-pub fn confirm_clear_keyboard(target: &str) -> serde_json::Value {
-    json!({
-        "inline_keyboard": [[
-            btn("✅ Wipe Data", &format!("clear:{target}")),
-            btn("❌ Cancel", "wipecancel")
-        ]]
-    })
-}
-
-/// Delay selection keyboard offered after tapping "Wipe Data".
+/// Delay selection keyboard offered when wiping app data.
 #[must_use]
 pub fn wipe_delay_keyboard(target: &str) -> serde_json::Value {
     json!({
         "inline_keyboard": [
-            [btn("⚡ Immediate", &format!("wipe:0:{target}"))],
+            [btn("⚡ Instant", &format!("wipe:0:{target}"))],
             [
-                btn("⏱️ 1 min", &format!("wipe:1:{target}")),
-                btn("⏱️ 2 min", &format!("wipe:2:{target}")),
-                btn("⏱️ 5 min", &format!("wipe:5:{target}"))
+                btn("⏱️ 5 mins", &format!("wipe:5:{target}")),
+                btn("⏱️ 15 mins", &format!("wipe:15:{target}"))
+            ],
+            [
+                btn("⏱️ 30 mins", &format!("wipe:30:{target}")),
+                btn("⏱️ 1 hour", &format!("wipe:60:{target}"))
             ],
             [btn("❌ Cancel", "wipecancel")]
         ]
@@ -303,24 +301,8 @@ mod tests {
         );
         assert_eq!(
             wide["inline_keyboard"][0][1]["callback_data"].as_str(),
-            Some("clearrefresh")
+            Some("clearask:current")
         );
-    }
-
-    #[test]
-    fn test_confirm_clear_keyboard_targets_index_or_package() {
-        for target in ["3", "org.smarttube.stable"] {
-            let expected = format!("clear:{target}");
-            let kb = confirm_clear_keyboard(target);
-            assert_eq!(
-                kb["inline_keyboard"][0][0]["callback_data"].as_str(),
-                Some(expected.as_str())
-            );
-            assert_eq!(
-                kb["inline_keyboard"][0][1]["callback_data"].as_str(),
-                Some("wipecancel")
-            );
-        }
     }
 
     #[test]
@@ -332,18 +314,22 @@ mod tests {
         );
         assert_eq!(
             kb["inline_keyboard"][1][0]["callback_data"].as_str(),
-            Some("wipe:1:com.example.app")
-        );
-        assert_eq!(
-            kb["inline_keyboard"][1][1]["callback_data"].as_str(),
-            Some("wipe:2:com.example.app")
-        );
-        assert_eq!(
-            kb["inline_keyboard"][1][2]["callback_data"].as_str(),
             Some("wipe:5:com.example.app")
         );
         assert_eq!(
+            kb["inline_keyboard"][1][1]["callback_data"].as_str(),
+            Some("wipe:15:com.example.app")
+        );
+        assert_eq!(
             kb["inline_keyboard"][2][0]["callback_data"].as_str(),
+            Some("wipe:30:com.example.app")
+        );
+        assert_eq!(
+            kb["inline_keyboard"][2][1]["callback_data"].as_str(),
+            Some("wipe:60:com.example.app")
+        );
+        assert_eq!(
+            kb["inline_keyboard"][3][0]["callback_data"].as_str(),
             Some("wipecancel")
         );
     }

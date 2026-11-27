@@ -47,6 +47,9 @@ enum Commands {
     Clear {
         /// App package or friendly name (e.g., hotstar, youtube, netflix, or package id)
         app: String,
+        /// Optional delay in minutes before clearing (0 = immediate)
+        #[arg(short, long, default_value_t = 0)]
+        delay: u64,
     },
     /// List installed third-party apps, most recently used first
     Apps,
@@ -87,20 +90,24 @@ fn print_banner() {
     println!("  {}\n", "─".repeat(45).dimmed());
 }
 
-fn resolve_keycode(key: &str) -> &'static str {
-    match key.to_lowercase().as_str() {
+fn resolve_keycode(key: &str) -> Result<&'static str> {
+    let code = match key.to_lowercase().as_str() {
         "up" => "KEYCODE_DPAD_UP",
         "down" => "KEYCODE_DPAD_DOWN",
         "left" => "KEYCODE_DPAD_LEFT",
         "right" => "KEYCODE_DPAD_RIGHT",
         "ok" | "select" | "enter" => "KEYCODE_DPAD_CENTER",
         "back" => "KEYCODE_BACK",
+        "home" => "KEYCODE_HOME",
         "pause" | "play" | "playpause" => "KEYCODE_MEDIA_PLAY_PAUSE",
         "volup" | "volume_up" => "KEYCODE_VOLUME_UP",
         "voldown" | "volume_down" => "KEYCODE_VOLUME_DOWN",
         "mute" => "KEYCODE_VOLUME_MUTE",
-        _ => "KEYCODE_HOME",
-    }
+        other => anyhow::bail!(
+            "Unknown key '{other}'. Valid keys: up, down, left, right, ok, back, home, pause, volup, voldown, mute"
+        ),
+    };
+    Ok(code)
 }
 
 fn handle_status(tv: &TvController) -> Result<()> {
@@ -163,7 +170,7 @@ fn handle_screen(tv: &TvController, output: &str) -> Result<()> {
 }
 
 fn handle_remote(tv: &TvController, key: &str) -> Result<()> {
-    let keycode = resolve_keycode(key);
+    let keycode = resolve_keycode(key)?;
     println!("  🎮 Sending {} ({keycode})...", key.cyan());
     tv.send_key(keycode)?;
     println!("  {} Key event dispatched.", "✔".green().bold());
@@ -236,7 +243,16 @@ fn handle_kill(tv: &TvController, app: &str) -> Result<()> {
     Ok(())
 }
 
-fn handle_clear(tv: &TvController, app: &str) -> Result<()> {
+fn handle_clear(tv: &TvController, app: &str, delay_mins: u64) -> Result<()> {
+    if delay_mins > 0 {
+        println!(
+            "  ⏳ Waiting {delay_mins} min before clearing {}...",
+            app.bold()
+        );
+        std::thread::sleep(std::time::Duration::from_secs(
+            delay_mins.saturating_mul(60),
+        ));
+    }
     let (pkg, name) = tv.clear_app_data(app)?;
     println!(
         "  {} Cleared data for {} ({})",
@@ -304,7 +320,7 @@ fn run_command(cmd: Commands, config: Option<TerebiConfig>) -> Result<()> {
         }
         Commands::Screen { output } => handle_screen(&build_tv(config)?, &output),
         Commands::Kill { app } => handle_kill(&build_tv(config)?, &app),
-        Commands::Clear { app } => handle_clear(&build_tv(config)?, &app),
+        Commands::Clear { app, delay } => handle_clear(&build_tv(config)?, &app, delay),
         Commands::Open { app } => handle_open(&build_tv(config)?, &app),
         Commands::Remote { key } => handle_remote(&build_tv(config)?, &key),
         Commands::Reboot => handle_power(&build_tv(config)?, false),
@@ -324,7 +340,12 @@ fn run_command(cmd: Commands, config: Option<TerebiConfig>) -> Result<()> {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let loaded_config = TerebiConfig::load().ok();
+    let cfg_path = TerebiConfig::config_path();
+    let loaded_config = if cfg_path.exists() {
+        Some(TerebiConfig::load()?)
+    } else {
+        None
+    };
 
     if loaded_config.is_none() && !matches!(cli.command, Some(Commands::Setup)) {
         println!("  {} Configuration not found.", "ℹ".yellow().bold());

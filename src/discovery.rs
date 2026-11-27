@@ -71,12 +71,22 @@ pub fn scan_subnet_for_adb(port: u16) -> Option<String> {
     }
     drop(tx);
 
-    if let Ok(found_ip) = rx.recv_timeout(Duration::from_millis(1000)) {
-        if !is_emulator_serial(&found_ip) {
-            return Some(found_ip);
+    let deadline = std::time::Instant::now() + Duration::from_millis(1000);
+    let mut found = None;
+    while let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) {
+        if let Ok(ip) = rx.recv_timeout(remaining) {
+            if !is_emulator_serial(&ip) {
+                found = Some(ip);
+                break;
+            }
+        } else {
+            break;
         }
     }
-    None
+    for handle in handles {
+        let _ = handle.join();
+    }
+    found
 }
 
 #[must_use]
